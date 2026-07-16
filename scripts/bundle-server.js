@@ -29,6 +29,13 @@ for (const f of sourceFiles) {
   }
 }
 
+// 复制前端构建产物（手机访问需要）
+const clientDist = path.join(ROOT, 'client', 'dist');
+if (fs.existsSync(clientDist)) {
+  copyDir(clientDist, path.join(OUT, 'client', 'dist'));
+  console.log('  COPY client/dist');
+}
+
 // 复制目录
 const sourceDirs = ['middleware', 'routes'];
 for (const dir of sourceDirs) {

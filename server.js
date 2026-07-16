@@ -189,12 +189,28 @@ app.delete('/api/roots', (req, res) => {
 });
 
 // ============ 静态文件 ============
-const clientDist = path.join(__dirname, 'client', 'dist');
-if (fs.existsSync(clientDist)) {
-  app.use(express.static(clientDist));
+
+// 搜索 client/dist（适配不同打包路径）
+function findClientDist() {
+  const candidates = [
+    path.join(__dirname, 'client', 'dist'),
+    path.join(__dirname, '..', 'client', 'dist'),
+  ];
+  for (const p of candidates) {
+    if (fs.existsSync(p)) return p;
+  }
+  return null;
 }
 
-// SPA fallback
+const clientDist = findClientDist();
+if (clientDist) {
+  console.log(`[静态] 前端目录: ${clientDist}`);
+  app.use(express.static(clientDist));
+} else {
+  console.log('[静态] 未找到前端目录，仅提供 API 服务');
+}
+
+// SPA fallback（仅开发模式有 client/dist 时才生效）
 app.get('*', (req, res) => {
   if (req.path.startsWith('/api/')) {
     return res.status(404).json({ error: 'API endpoint not found' });
@@ -203,18 +219,7 @@ app.get('*', (req, res) => {
   if (fs.existsSync(indexPath)) {
     res.sendFile(indexPath);
   } else {
-    res.status(200).send(`
-      <!DOCTYPE html>
-      <html lang="zh-CN">
-      <head><meta charset="UTF-8"><title>LanDisk</title></head>
-      <body style="font-family:sans-serif;text-align:center;padding-top:100px;">
-        <h1>📁 LanDisk 服务已启动</h1>
-        <p>前端尚未构建。请运行 <code>cd client && npm run build</code></p>
-        <hr>
-        <p>API: <a href="/api/files?path=/">/api/files?path=/</a></p>
-      </body>
-      </html>
-    `);
+    res.status(200).send('LanDisk API is running.');
   }
 });
 

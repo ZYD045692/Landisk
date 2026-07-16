@@ -7,7 +7,7 @@ use std::os::windows::process::CommandExt;
 
 use tauri::menu::{CheckMenuItemBuilder, MenuBuilder, MenuItemBuilder};
 use tauri::tray::TrayIconBuilder;
-use tauri::{Manager, WindowEvent};
+use tauri::{Manager, WindowEvent, WebviewUrl, WebviewWindowBuilder};
 use tauri_plugin_autostart::ManagerExt;
 
 struct ServerProcess(Mutex<Option<Child>>);
@@ -125,12 +125,18 @@ pub fn run() {
         .setup(|app| {
             // 0. 开机自启 → 保持隐藏；手动启动 → 显示窗口
             let is_autostart = std::env::args().any(|a| a == "--hidden");
-            if !is_autostart {
-                if let Some(w) = app.get_webview_window("main") {
-                    let _ = w.show();
-                    let _ = w.set_focus();
-                }
-            }
+            let _win = WebviewWindowBuilder::new(
+                app,
+                "main",
+                WebviewUrl::External("http://localhost:22580".parse().unwrap()),
+            )
+            .title("LanDisk")
+            .inner_size(900.0, 640.0)
+            .min_inner_size(400.0, 400.0)
+            .resizable(true)
+            .center()
+            .visible(!is_autostart)
+            .build()?;
 
             // 1. 后台启动 Express server，不阻塞 UI
             let child = ensure_server(app);
