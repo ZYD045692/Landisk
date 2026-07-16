@@ -50,20 +50,8 @@ function createUploadRouter(config) {
     }
   });
 
-  // 拦截可执行文件（防御性措施）
-  const blockedExts = ['.exe', '.bat', '.cmd', '.ps1', '.sh', '.msi', '.dll', '.sys', '.vbs', '.scr'];
-  const fileFilter = (req, file, cb) => {
-    const originalName = fixEncoding(file.originalname);
-    const ext = path.extname(originalName).toLowerCase();
-    if (blockedExts.includes(ext)) {
-      return cb(new Error(`File type not allowed: ${ext}`), false);
-    }
-    cb(null, true);
-  };
-
   const upload = multer({
     storage,
-    fileFilter,
     limits: {
       fileSize: (config.maxFileSizeMB || 500) * 1024 * 1024
     }
@@ -95,13 +83,28 @@ function createUploadRouter(config) {
         return res.status(400).json({ error: err.message });
       }
 
+      const blockedExts = ['.exe', '.bat', '.cmd', '.ps1', '.sh', '.msi', '.dll', '.sys', '.vbs', '.scr'];
+
       if (!req.files || req.files.length === 0) {
         return res.status(400).json({ error: '没有选择文件' });
       }
 
       const replaceList = (req.body.replace || '').split(',').map(s => s.trim()).filter(Boolean);
-      let replaced = 0, uploaded = 0;
-      const files = req.files.map(f => {
+      let replaced = 0, uploaded = 0, blocked = 0;
+
+      // 删除被阻止的文件
+      const safeFiles = [];
+      for (const f of req.files) {
+        const ext = path.extname(f.filename).toLowerCase();
+        if (blockedExts.includes(ext)) {
+          try { fs.unlinkSync(f.path); } catch {}
+          blocked++;
+          continue;
+        }
+        safeFiles.push(f);
+      }
+
+      const files = safeFiles.map(f => {
         const name = fixEncoding(f.filename);
         const originalName = fixEncoding(f.originalname);
         if (replaceList.includes(originalName)) {
@@ -115,6 +118,7 @@ function createUploadRouter(config) {
       const parts = [];
       if (uploaded > 0) parts.push(`新增 ${uploaded} 个`);
       if (replaced > 0) parts.push(`替换 ${replaced} 个`);
+      if (blocked > 0) parts.push(`${blocked} 个文件类型不安全已跳过`);
 
       res.json({ message: parts.join('，'), files });
     });

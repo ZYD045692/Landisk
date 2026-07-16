@@ -92,7 +92,15 @@ function triggerFileInput() {
 }
 
 async function uploadFiles(fileList) {
-  const names = Array.from(fileList).map(f => f.name)
+  // 过滤掉文件夹和空文件
+  const files = Array.from(fileList).filter(f => f.size > 0 && f.type !== '')
+  if (files.length === 0) {
+    uploadResult.value = '不支持上传文件夹，请选择文件'
+    uploadError.value = true
+    setTimeout(() => { uploadResult.value = '' }, 3000)
+    return
+  }
+  const names = files.map(f => f.name)
   uploading.value = true
   progress.value = 0
   progressText.value = '检查文件冲突...'
@@ -107,7 +115,7 @@ async function uploadFiles(fileList) {
       conflictList.value = conflicts
       conflictChoices.value = {}
       for (const n of conflicts) conflictChoices.value[n] = 'replace'
-      pendingFiles = fileList
+      pendingFiles = files
       uploading.value = false
       showConflict.value = true
       return
@@ -116,7 +124,7 @@ async function uploadFiles(fileList) {
     // check 失败，直接上传
   }
 
-  doUploadDirect(fileList)
+  doUploadDirect(files)
 }
 
 function cancelConflict() {
