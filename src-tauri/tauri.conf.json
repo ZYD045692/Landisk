@@ -1,0 +1,44 @@
+{
+  "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
+  "productName": "LanDisk",
+  "version": "0.1.0",
+  "identifier": "com.landisk.app",
+  "build": {
+    "frontendDist": "../client/dist",
+    "devUrl": "http://localhost:5173",
+    "beforeDevCommand": "",
+    "beforeBuildCommand": "npm run build:server"
+  },
+  "app": {
+    "windows": [
+      {
+        "title": "LanDisk",
+        "width": 900,
+        "height": 640,
+        "minWidth": 400,
+        "minHeight": 400,
+        "resizable": true,
+        "fullscreen": false,
+        "center": true,
+        "dragDropEnabled": false
+      }
+    ],
+    "security": {
+      "csp": null
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": "nsis",
+    "resources": [
+      "../server-dist/**/*"
+    ],
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ]
+  }
+}
