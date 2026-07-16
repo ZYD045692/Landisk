@@ -36,6 +36,14 @@
           >
             时间 {{ sortBy === 'date' ? (sortAsc ? '▲' : '▼') : '' }}
           </el-button>
+          <el-button
+            size="small"
+            :type="sortBy === 'ext' ? 'primary' : ''"
+            :plain="sortBy !== 'ext'"
+            @click="toggleSort('ext')"
+          >
+            类型 {{ sortBy === 'ext' ? (sortAsc ? '▲' : '▼') : '' }}
+          </el-button>
         </div>
       </div>
       <div v-if="selected.length > 0" class="batch-bar">
@@ -244,9 +252,13 @@ const filteredEntries = computed(() => {
     } else if (sortBy.value === 'size') {
       va = a.isDirectory ? -1 : a.size
       vb = b.isDirectory ? -1 : b.size
-    } else {
+    } else if (sortBy.value === 'date') {
       va = new Date(a.modified).getTime()
       vb = new Date(b.modified).getTime()
+    } else {
+      va = (a.extension || '')
+      vb = (b.extension || '')
+      return sortAsc.value ? va.localeCompare(vb) : vb.localeCompare(va)
     }
     return sortAsc.value ? va - vb : vb - va
   })

@@ -4,6 +4,11 @@ const path = require('path');
 const fs = require('fs');
 const { resolveSafePath } = require('../middleware/pathSafety');
 
+// 修复中文文件名：multer 将 UTF-8 字节误读为 latin1
+function fixEncoding(raw) {
+  return Buffer.from(raw, 'latin1').toString('utf8');
+}
+
 function createUploadRouter(config) {
   const router = express.Router();
 
@@ -19,16 +24,17 @@ function createUploadRouter(config) {
       cb(null, resolved.absolutePath);
     },
     filename: (req, file, cb) => {
-      // 同名文件处理：若存在则加序号
+      // 修复中文文件名编码
+      const originalName = fixEncoding(file.originalname);
       const userPath = req.body.targetPath || '/';
       const resolved = resolveSafePath(userPath, config.roots);
       const destPath = resolved.valid ? resolved.absolutePath : '';
 
-      let finalName = file.originalname;
+      let finalName = originalName;
       if (destPath) {
         let counter = 1;
-        const ext = path.extname(file.originalname);
-        const base = path.basename(file.originalname, ext);
+        const ext = path.extname(originalName);
+        const base = path.basename(originalName, ext);
         while (fs.existsSync(path.join(destPath, finalName))) {
           finalName = `${base} (${counter})${ext}`;
           counter++;
@@ -41,7 +47,8 @@ function createUploadRouter(config) {
   // 拦截可执行文件（防御性措施）
   const blockedExts = ['.exe', '.bat', '.cmd', '.ps1', '.sh', '.msi', '.dll', '.sys', '.vbs', '.scr'];
   const fileFilter = (req, file, cb) => {
-    const ext = path.extname(file.originalname).toLowerCase();
+    const originalName = fixEncoding(file.originalname);
+    const ext = path.extname(originalName).toLowerCase();
     if (blockedExts.includes(ext)) {
       return cb(new Error(`File type not allowed: ${ext}`), false);
     }
@@ -78,8 +85,8 @@ function createUploadRouter(config) {
       }
 
       const uploaded = req.files.map(f => ({
-        name: f.filename,
-        originalName: f.originalname,
+        name: fixEncoding(f.filename),
+        originalName: fixEncoding(f.originalname),
         size: f.size
       }));
 

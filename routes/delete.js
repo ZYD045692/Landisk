@@ -1,6 +1,18 @@
 const express = require('express');
 const fs = require('fs/promises');
+const { execFile } = require('child_process');
 const { resolveSafePath } = require('../middleware/pathSafety');
+
+function moveToTrash(absPath, isDir) {
+  return new Promise((resolve, reject) => {
+    const safe = absPath.replace(/'/g, "''");
+    const method = isDir ? 'DeleteDirectory' : 'DeleteFile';
+    const ps = `Add-Type -AssemblyName Microsoft.VisualBasic;[Microsoft.VisualBasic.FileIO.FileSystem]::${method}('${safe}','OnlyErrorDialogs','SendToRecycleBin')`;
+    execFile('powershell', ['-Command', ps], { timeout: 10000 }, (err) => {
+      err ? reject(err) : resolve();
+    });
+  });
+}
 
 function createDeleteRouter(config) {
   const router = express.Router();
@@ -21,12 +33,18 @@ function createDeleteRouter(config) {
 
     try {
       const stat = await fs.stat(resolved.absolutePath);
-      if (stat.isDirectory()) {
-        await fs.rm(resolved.absolutePath, { recursive: true });
-      } else {
-        await fs.unlink(resolved.absolutePath);
+      try {
+        await moveToTrash(resolved.absolutePath, stat.isDirectory());
+        return res.json({ message: '已移入回收站' });
+      } catch {
+        // 回收站失败则永久删除
+        if (stat.isDirectory()) {
+          await fs.rm(resolved.absolutePath, { recursive: true });
+        } else {
+          await fs.unlink(resolved.absolutePath);
+        }
+        return res.json({ message: '已永久删除（回收站不可用）' });
       }
-      res.json({ message: 'Deleted successfully' });
     } catch (err) {
       if (err.code === 'ENOENT') return res.status(404).json({ error: 'Not found' });
       if (err.code === 'EACCES' || err.code === 'EPERM') return res.status(403).json({ error: 'Permission denied' });
