@@ -12,36 +12,16 @@
           style="width: 220px"
         />
         <div class="sort-btns">
-          <el-button
-            size="small"
-            :type="sortBy === 'name' ? 'primary' : ''"
-            :plain="sortBy !== 'name'"
-            @click="toggleSort('name')"
-          >
+          <el-button size="small" :type="sortBy === 'name' ? 'primary' : ''" :plain="sortBy !== 'name'" @click="toggleSort('name')">
             名称 {{ sortBy === 'name' ? (sortAsc ? '▲' : '▼') : '' }}
           </el-button>
-          <el-button
-            size="small"
-            :type="sortBy === 'size' ? 'primary' : ''"
-            :plain="sortBy !== 'size'"
-            @click="toggleSort('size')"
-          >
+          <el-button size="small" :type="sortBy === 'size' ? 'primary' : ''" :plain="sortBy !== 'size'" @click="toggleSort('size')">
             大小 {{ sortBy === 'size' ? (sortAsc ? '▲' : '▼') : '' }}
           </el-button>
-          <el-button
-            size="small"
-            :type="sortBy === 'date' ? 'primary' : ''"
-            :plain="sortBy !== 'date'"
-            @click="toggleSort('date')"
-          >
+          <el-button size="small" :type="sortBy === 'date' ? 'primary' : ''" :plain="sortBy !== 'date'" @click="toggleSort('date')">
             时间 {{ sortBy === 'date' ? (sortAsc ? '▲' : '▼') : '' }}
           </el-button>
-          <el-button
-            size="small"
-            :type="sortBy === 'ext' ? 'primary' : ''"
-            :plain="sortBy !== 'ext'"
-            @click="toggleSort('ext')"
-          >
+          <el-button size="small" :type="sortBy === 'ext' ? 'primary' : ''" :plain="sortBy !== 'ext'" @click="toggleSort('ext')">
             类型 {{ sortBy === 'ext' ? (sortAsc ? '▲' : '▼') : '' }}
           </el-button>
           <el-button size="small" :icon="Refresh" @click="$emit('retry')" />
