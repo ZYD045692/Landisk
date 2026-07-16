@@ -117,8 +117,21 @@ pub fn run() {
                 let _ = w.set_focus();
             }
         }))
-        .plugin(tauri_plugin_autostart::init(tauri_plugin_autostart::MacosLauncher::LaunchAgent, None))
+        .plugin(
+            tauri_plugin_autostart::Builder::new()
+                .arg("--hidden")
+                .build(),
+        )
         .setup(|app| {
+            // 0. 开机自启 → 保持隐藏；手动启动 → 显示窗口
+            let is_autostart = std::env::args().any(|a| a == "--hidden");
+            if !is_autostart {
+                if let Some(w) = app.get_webview_window("main") {
+                    let _ = w.show();
+                    let _ = w.set_focus();
+                }
+            }
+
             // 1. 后台启动 Express server，不阻塞 UI
             let child = ensure_server(app);
             app.manage(ServerProcess(Mutex::new(child)));
