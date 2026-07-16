@@ -44,6 +44,7 @@
           >
             类型 {{ sortBy === 'ext' ? (sortAsc ? '▲' : '▼') : '' }}
           </el-button>
+          <el-button size="small" :icon="Refresh" @click="$emit('retry')" />
         </div>
       </div>
       <div v-if="selected.length > 0" class="batch-bar">
@@ -208,7 +209,7 @@
 <script setup>
 import { ref, computed, watch } from 'vue'
 import { ElMessageBox, ElMessage } from 'element-plus'
-import { Delete, Download, ArrowRight, Search } from '@element-plus/icons-vue'
+import { Delete, Download, ArrowRight, Search, Refresh } from '@element-plus/icons-vue'
 import { getFileIcon, formatFileSize, formatDate } from '../utils/format'
 import { getDownloadUrl, deleteFile } from '../api'
 

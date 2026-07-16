@@ -1,5 +1,10 @@
 <template>
-  <el-container class="app-container">
+  <el-container
+    class="app-container"
+    :class="{ 'global-dragover': globalDragover }"
+    @dragover.prevent="globalDragover = true"
+    @drop.prevent="onGlobalDrop"
+  >
     <el-header class="app-header" height="56px">
       <div class="header-left">
         <el-icon :size="24"><FolderOpened /></el-icon>
@@ -59,6 +64,16 @@
       </div>
     </el-dialog>
 
+    <!-- 全局拖拽提示 -->
+    <div v-if="globalDragover" class="global-drop-overlay">
+      <div class="drop-icons">
+        <img class="drop-icon-excel" :src="xIcon" />
+        <div class="drop-icon-word"><span></span></div>
+        <img class="drop-icon-chart" :src="picIcon" />
+      </div>
+      <p class="drop-text">拖拽文件到此处上传</p>
+    </div>
+
     <el-main class="app-main">
       <el-alert
         v-if="serverRetrying"
@@ -93,6 +108,8 @@ import { Setting, Iphone } from '@element-plus/icons-vue'
 import QRCode from 'qrcode'
 import { fetchRoots, addRoot, removeRoot } from './api'
 import api from './api'
+import xIcon from './assets/letter-x.svg'
+import picIcon from './assets/picture.svg'
 
 const roots = ref([])
 const showSettings = ref(false)
@@ -112,6 +129,15 @@ async function loadRoots() {
     roots.value = []
   }
 }
+
+const globalDragover = ref(false)
+const droppedFiles = ref(null)
+
+function onGlobalDrop(e) {
+  globalDragover.value = false
+  droppedFiles.value = e.dataTransfer.files
+}
+provide('droppedFiles', droppedFiles)
 
 const serverDown = ref(false)
 const serverRetrying = ref(false)
@@ -139,6 +165,12 @@ async function tryConnect(retries = 5) {
 onMounted(() => {
   loadRoots()
   tryConnect()
+  // 窗口级 dragleave：拖出窗口时清除提示（dragover 会停止触发）
+  window.addEventListener('dragleave', (e) => {
+    if (e.clientX <= 0 || e.clientY <= 0) {
+      globalDragover.value = false
+    }
+  })
 })
 provide('roots', roots)
 
@@ -196,9 +228,9 @@ async function handleRemoveRoot(targetPath) {
 
 html, body, #app {
   height: 100%;
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC',
-    'Hiragino Sans GB', 'Microsoft YaHei', 'Helvetica Neue', Helvetica, Arial,
-    sans-serif;
+  font-family: Inter, system-ui, sans-serif;
+  font-weight: 500;
+  font-size: 14px;
   background: #f5f7fa;
   -webkit-font-smoothing: antialiased;
 }
@@ -351,6 +383,85 @@ html, body, #app {
 .qr-hint {
   font-size: 12px;
   color: #c0c4cc;
+  margin: 0;
+}
+
+/* Element Plus 字体统一 */
+.el-button,
+.el-input__inner,
+.el-table,
+.el-table th,
+.el-table td,
+.el-pagination,
+.el-tag,
+.el-select,
+.el-select-dropdown__item,
+.el-dropdown-menu__item,
+.el-radio__label,
+.el-checkbox__label {
+  font-family: Inter, system-ui, sans-serif;
+  font-weight: 500;
+  font-size: 14px;
+}
+
+.global-drop-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(255,255,255,0.85);
+  backdrop-filter: blur(8px);
+  z-index: 9999;
+  pointer-events: none;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+}
+
+.drop-icons {
+  width: 140px;
+  height: 95px;
+  margin: 0 auto;
+  position: relative;
+  margin-bottom: 24px;
+}
+
+.drop-icon-excel {
+  position: absolute;
+  width: 48px;
+  height: 48px;
+  left: 16px;
+  top: 14px;
+  border-radius: 10px;
+  transform: rotate(-16deg);
+  box-shadow: 0 8px 20px rgba(0,0,0,.05);
+  z-index: 1;
+}
+
+.drop-icon-word {
+  position: absolute;
+  width: 48px; height: 54px; right: 16px; top: 8px;
+  background: #73a8f0; border-radius: 10px; transform: rotate(16deg);
+  box-shadow: 0 8px 20px rgba(90,120,255,.15); z-index: 1;
+}
+.drop-icon-word::before, .drop-icon-word::after, .drop-icon-word span {
+  content: ""; position: absolute; left: 10px; width: 26px; height: 3px;
+  border-radius: 2px; background: white;
+}
+.drop-icon-word::before { top: 14px; }
+.drop-icon-word span { top: 24px; }
+.drop-icon-word::after { top: 34px; width: 18px; }
+
+.drop-icon-chart {
+  position: absolute;
+  width: 48px; height: 48px; left: 50%; bottom: 0; transform: translateX(-50%);
+  border-radius: 10px; z-index: 3;
+  box-shadow: 0 8px 20px rgba(79,112,255,.2);
+}
+
+.drop-text {
+  font-size: 20px;
+  color: #222;
   margin: 0;
 }
 </style>

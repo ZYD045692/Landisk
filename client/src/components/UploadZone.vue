@@ -2,10 +2,6 @@
   <div class="upload-wrapper">
     <div
       class="drop-zone"
-      :class="{ 'is-dragover': isDragover }"
-      @dragover.prevent="isDragover = true"
-      @dragleave.prevent="isDragover = false"
-      @drop.prevent="handleDrop"
     >
       <el-icon :size="32" color="#909399"><UploadFilled /></el-icon>
       <p class="drop-text">拖拽文件到此处上传</p>
@@ -15,13 +11,7 @@
       <el-button type="primary" :icon="Plus" @click="triggerFileInput" :loading="uploading">
         {{ uploading ? '上传中...' : '选择文件' }}
       </el-button>
-      <input
-        ref="fileInputRef"
-        type="file"
-        multiple
-        style="display:none"
-        @change="handleFileInput"
-      />
+
     </div>
 
     <!-- 上传进度 -->
@@ -43,7 +33,7 @@
         </div>
       </div>
       <template #footer>
-        <el-button @click="showConflict = false">取消</el-button>
+        <el-button @click="cancelConflict">取消</el-button>
         <el-button type="primary" @click="doUpload">确认上传</el-button>
       </template>
     </el-dialog>
@@ -62,7 +52,7 @@
 </template>
 
 <script setup>
-import { ref } from 'vue'
+import { ref, inject, watch } from 'vue'
 import { Plus } from '@element-plus/icons-vue'
 import { checkConflicts } from '../api'
 
@@ -72,13 +62,11 @@ const props = defineProps({
 
 const emit = defineEmits(['uploaded'])
 
-const isDragover = ref(false)
 const uploading = ref(false)
 const progress = ref(0)
 const progressText = ref('')
 const uploadResult = ref('')
 const uploadError = ref(false)
-const fileInputRef = ref(null)
 
 // 冲突弹窗
 const showConflict = ref(false)
@@ -86,22 +74,21 @@ const conflictList = ref([])
 const conflictChoices = ref({})
 let pendingFiles = null
 
+// 全局拖拽监听
+const droppedFiles = inject('droppedFiles', ref(null))
+watch(droppedFiles, (val) => {
+  if (val && val.length > 0) {
+    uploadFiles(val)
+    droppedFiles.value = null
+  }
+})
+
 function triggerFileInput() {
-  fileInputRef.value?.click()
-}
-
-function handleFileInput(e) {
-  if (e.target.files.length > 0) {
-    uploadFiles(e.target.files)
-    e.target.value = ''
-  }
-}
-
-function handleDrop(e) {
-  isDragover.value = false
-  if (e.dataTransfer.files.length > 0) {
-    uploadFiles(e.dataTransfer.files)
-  }
+  const input = document.createElement('input')
+  input.type = 'file'
+  input.multiple = true
+  input.onchange = e => { if (e.target.files.length > 0) uploadFiles(e.target.files) }
+  input.click()
 }
 
 async function uploadFiles(fileList) {
@@ -132,10 +119,17 @@ async function uploadFiles(fileList) {
   doUploadDirect(fileList)
 }
 
+function cancelConflict() {
+  showConflict.value = false
+  pendingFiles = null
+  conflictChoices.value = {}
+}
+
 async function doUpload() {
   showConflict.value = false
   doUploadDirect(pendingFiles)
   pendingFiles = null
+  conflictChoices.value = {}
 }
 
 async function doUploadDirect(fileList) {
@@ -214,16 +208,11 @@ async function doUploadDirect(fileList) {
 
 .drop-zone {
   background: #fff;
-  border: 2px dashed #dcdfe6;
+  border: 1px solid #e8e8e8;
   border-radius: 8px;
   padding: 24px 16px;
   text-align: center;
   transition: border-color 0.3s, background 0.3s;
-}
-
-.drop-zone.is-dragover {
-  border-color: #409eff;
-  background: #ecf5ff;
 }
 
 .drop-text {
