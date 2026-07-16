@@ -30,6 +30,24 @@
       <p class="progress-text">{{ progressText }}</p>
     </div>
 
+    <!-- 冲突弹窗 -->
+    <el-dialog v-model="showConflict" title="同名文件处理" width="480px" destroy-on-close>
+      <div class="conflict-body">
+        <div v-for="name in conflictList" :key="name" class="conflict-row">
+          <span class="conflict-name">📄 {{ name }}</span>
+          <el-radio-group v-model="conflictChoices[name]">
+            <el-radio value="replace">替换</el-radio>
+            <el-radio value="keep">保留两份</el-radio>
+            <el-radio value="skip">取消</el-radio>
+          </el-radio-group>
+        </div>
+      </div>
+      <template #footer>
+        <el-button @click="showConflict = false">取消</el-button>
+        <el-button type="primary" @click="doUpload">确认上传</el-button>
+      </template>
+    </el-dialog>
+
     <!-- 上传结果 -->
     <div v-if="uploadResult" class="upload-result">
       <el-alert
@@ -46,6 +64,7 @@
 <script setup>
 import { ref } from 'vue'
 import { Plus } from '@element-plus/icons-vue'
+import { checkConflicts } from '../api'
 
 const props = defineProps({
   uploadPath: { type: String, default: '/' }
@@ -60,6 +79,12 @@ const progressText = ref('')
 const uploadResult = ref('')
 const uploadError = ref(false)
 const fileInputRef = ref(null)
+
+// 冲突弹窗
+const showConflict = ref(false)
+const conflictList = ref([])
+const conflictChoices = ref({})
+let pendingFiles = null
 
 function triggerFileInput() {
   fileInputRef.value?.click()
@@ -80,15 +105,61 @@ function handleDrop(e) {
 }
 
 async function uploadFiles(fileList) {
+  const names = Array.from(fileList).map(f => f.name)
+  uploading.value = true
+  progress.value = 0
+  progressText.value = '检查文件冲突...'
+  uploadResult.value = ''
+  uploadError.value = false
+
+  // 检查冲突
+  try {
+    const res = await checkConflicts(props.uploadPath, names)
+    const conflicts = res.data.conflicts || []
+    if (conflicts.length > 0) {
+      conflictList.value = conflicts
+      conflictChoices.value = {}
+      for (const n of conflicts) conflictChoices.value[n] = 'replace'
+      pendingFiles = fileList
+      uploading.value = false
+      showConflict.value = true
+      return
+    }
+  } catch {
+    // check 失败，直接上传
+  }
+
+  doUploadDirect(fileList)
+}
+
+async function doUpload() {
+  showConflict.value = false
+  doUploadDirect(pendingFiles)
+  pendingFiles = null
+}
+
+async function doUploadDirect(fileList) {
   const formData = new FormData()
   formData.append('targetPath', props.uploadPath)
+  // replace 必须在 files 之前，multer 按顺序解析
+  const replaceList = Object.entries(conflictChoices.value)
+    .filter(([, v]) => v === 'replace')
+    .map(([k]) => k)
+  formData.append('replace', replaceList.join(','))
+  const skipList = Object.entries(conflictChoices.value)
+    .filter(([, v]) => v === 'skip')
+    .map(([k]) => k)
+  let count = 0
   for (const file of fileList) {
+    if (skipList.includes(file.name)) continue
     formData.append('files', file)
+    count++
   }
+  if (count === 0) { uploading.value = false; return }
 
   uploading.value = true
   progress.value = 0
-  progressText.value = `准备上传 ${fileList.length} 个文件...`
+  progressText.value = `准备上传 ${count} 个文件...`
   uploadResult.value = ''
   uploadError.value = false
 
@@ -119,7 +190,11 @@ async function uploadFiles(fileList) {
       xhr.send(formData)
     })
 
-    uploadResult.value = `成功上传 ${fileList.length} 个文件`
+    const data = JSON.parse(xhr.responseText)
+    const skipped = skipList.length
+    let msg = data.message || '上传完成'
+    if (skipped > 0) msg += `，取消 ${skipped} 个`
+    uploadResult.value = msg
     uploadError.value = false
     emit('uploaded')
   } catch (err) {
@@ -178,6 +253,29 @@ async function uploadFiles(fileList) {
 
 .upload-result {
   margin-top: 8px;
+}
+
+.conflict-body {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.conflict-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px 12px;
+  background: #fafafa;
+  border-radius: 6px;
+}
+
+.conflict-name {
+  font-size: 14px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 60%;
 }
 
 /* 移动端适配 */

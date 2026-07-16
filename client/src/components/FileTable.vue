@@ -48,14 +48,15 @@
       </div>
       <div v-if="selected.length > 0" class="batch-bar">
         <span class="batch-count">已选 {{ selected.length }} 项</span>
-        <el-button size="small" type="danger" @click="batchDelete">批量删除</el-button>
+        <el-button size="small" type="danger" @click="batchDelete" :loading="deleting">批量删除</el-button>
         <el-button size="small" @click="selected = []">取消选择</el-button>
       </div>
     </div>
 
     <!-- 加载中 -->
-    <div v-if="loading" class="loading-state">
-      <el-skeleton :rows="5" animated />
+    <div v-if="loading || deleting" class="loading-state">
+      <el-skeleton v-if="loading" :rows="5" animated />
+      <el-progress v-if="deleting" :percentage="deleteProgress" :stroke-width="8" />
     </div>
 
     <!-- 错误 -->
@@ -206,7 +207,7 @@
 
 <script setup>
 import { ref, computed, watch } from 'vue'
-import { ElMessageBox } from 'element-plus'
+import { ElMessageBox, ElMessage } from 'element-plus'
 import { Delete, Download, ArrowRight, Search } from '@element-plus/icons-vue'
 import { getFileIcon, formatFileSize, formatDate } from '../utils/format'
 import { getDownloadUrl, deleteFile } from '../api'
@@ -284,6 +285,8 @@ watch([searchQuery, () => props.entries], () => {
 
 // 多选
 const selected = ref([])
+const deleting = ref(false)
+const deleteProgress = ref(0)
 const tableRef = ref(null)
 
 function onSelectionChange(rows) {
@@ -298,13 +301,24 @@ async function batchDelete() {
       '批量删除',
       { confirmButtonText: '删除', cancelButtonText: '取消', type: 'warning', confirmButtonClass: 'el-button--danger' }
     )
-    for (const row of selected.value) {
-      const filePath = (props.currentPath === '/' ? '' : props.currentPath) + '/' + row.name
-      try { await deleteFile(filePath) } catch { /* skip failed */ }
-    }
+    deleting.value = true
+    deleteProgress.value = 0
+    let completed = 0
+    const results = await Promise.allSettled(
+      selected.value.map(async row => {
+        const filePath = (props.currentPath === '/' ? '' : props.currentPath) + '/' + row.name
+        try { await deleteFile(filePath) } catch { /* skip */ }
+        completed++
+        deleteProgress.value = Math.round((completed / count) * 100)
+      })
+    )
+    const success = results.filter(r => r.status === 'fulfilled').length
     selected.value = []
+    deleteProgress.value = 0
+    deleting.value = false
+    ElMessage.success(`已删除 ${success} / ${count} 个项目`)
     emit('deleted')
-  } catch { /* cancelled */ }
+  } catch { deleting.value = false }
 }
 
 // 原有功能
@@ -329,10 +343,13 @@ async function confirmDelete(row) {
       '确认删除',
       { confirmButtonText: '删除', cancelButtonText: '取消', type: 'warning', confirmButtonClass: 'el-button--danger' }
     )
+    deleting.value = true
     const filePath = (props.currentPath === '/' ? '' : props.currentPath) + '/' + row.name
     await deleteFile(filePath)
+    ElMessage.success('已移入回收站')
     emit('deleted')
   } catch { /* cancelled */ }
+  finally { deleting.value = false }
 }
 
 function handleRowClick(row) {

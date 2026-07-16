@@ -57,4 +57,11 @@ export function removeRoot(dirPath) {
   return api.delete('/roots', { data: { path: dirPath } })
 }
 
+/**
+ * 检查上传文件冲突
+ */
+export function checkConflicts(targetPath, names) {
+  return api.post('/upload/check', { targetPath, names })
+}
+
 export default api

@@ -24,20 +24,26 @@ function createUploadRouter(config) {
       cb(null, resolved.absolutePath);
     },
     filename: (req, file, cb) => {
-      // 修复中文文件名编码
       const originalName = fixEncoding(file.originalname);
       const userPath = req.body.targetPath || '/';
       const resolved = resolveSafePath(userPath, config.roots);
       const destPath = resolved.valid ? resolved.absolutePath : '';
+      const replaceList = (req.body.replace || '').split(',').map(s => s.trim()).filter(Boolean);
+
 
       let finalName = originalName;
       if (destPath) {
-        let counter = 1;
-        const ext = path.extname(originalName);
-        const base = path.basename(originalName, ext);
-        while (fs.existsSync(path.join(destPath, finalName))) {
-          finalName = `${base} (${counter})${ext}`;
-          counter++;
+        const fullPath = path.join(destPath, finalName);
+        if (replaceList.includes(originalName) && fs.existsSync(fullPath)) {
+          try { fs.unlinkSync(fullPath); } catch {}
+        } else {
+          let counter = 1;
+          const ext = path.extname(originalName);
+          const base = path.basename(originalName, ext);
+          while (fs.existsSync(path.join(destPath, finalName))) {
+            finalName = `${base} (${counter})${ext}`;
+            counter++;
+          }
         }
       }
       cb(null, finalName);
@@ -63,6 +69,15 @@ function createUploadRouter(config) {
     }
   });
 
+  router.post('/check', (req, res) => {
+    const userPath = req.body.targetPath || '/';
+    const resolved = resolveSafePath(userPath, config.roots);
+    if (!resolved.valid) return res.status(403).json({ error: resolved.error });
+    const names = req.body.names || [];
+    const conflicts = names.filter(n => fs.existsSync(path.join(resolved.absolutePath, n)));
+    res.json({ conflicts });
+  });
+
   router.post('/', (req, res) => {
     if (config.roots.length === 0) {
       return res.status(400).json({ error: '请先添加共享目录' });
@@ -84,16 +99,24 @@ function createUploadRouter(config) {
         return res.status(400).json({ error: '没有选择文件' });
       }
 
-      const uploaded = req.files.map(f => ({
-        name: fixEncoding(f.filename),
-        originalName: fixEncoding(f.originalname),
-        size: f.size
-      }));
-
-      res.json({
-        message: `成功上传 ${uploaded.length} 个文件`,
-        files: uploaded
+      const replaceList = (req.body.replace || '').split(',').map(s => s.trim()).filter(Boolean);
+      let replaced = 0, uploaded = 0;
+      const files = req.files.map(f => {
+        const name = fixEncoding(f.filename);
+        const originalName = fixEncoding(f.originalname);
+        if (replaceList.includes(originalName)) {
+          replaced++;
+          return { name, originalName, size: f.size, action: 'replaced' };
+        }
+        uploaded++;
+        return { name, originalName, size: f.size, action: name === originalName ? 'new' : 'kept' };
       });
+
+      const parts = [];
+      if (uploaded > 0) parts.push(`新增 ${uploaded} 个`);
+      if (replaced > 0) parts.push(`替换 ${replaced} 个`);
+
+      res.json({ message: parts.join('，'), files });
     });
   });
 
