@@ -8,7 +8,7 @@ echo ==========================================
 echo.
 
 :: 1. Kill old processes
-call :killport 3000
+call :killport 22580
 call :killport 5173
 
 :: 2. Start Express (background, no extra window)
@@ -20,7 +20,7 @@ set /a count=0
 :wait_api
 timeout /t 1 /nobreak >nul
 set /a count+=1
-netstat -ano 2>nul | findstr ":3000.*LISTENING" >nul
+netstat -ano 2>nul | findstr ":22580.*LISTENING" >nul
 if errorlevel 1 (
     if !count! lss 30 (goto wait_api) else (
         echo [ERROR] API timed out
@@ -52,6 +52,7 @@ echo.
 echo [INFO] Launching Tauri...
 echo.
 npx tauri dev
+pause
 
 :: 7. Cleanup
 :cleanup

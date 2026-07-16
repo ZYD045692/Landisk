@@ -3,6 +3,7 @@ use std::sync::Mutex;
 use std::time::Duration;
 use std::net::TcpStream;
 use std::path::PathBuf;
+use std::os::windows::process::CommandExt;
 
 use tauri::menu::{CheckMenuItemBuilder, MenuBuilder, MenuItemBuilder};
 use tauri::tray::TrayIconBuilder;
@@ -23,27 +24,40 @@ impl Drop for ServerProcess {
     }
 }
 
-fn find_server_js(app: &tauri::App) -> PathBuf {
-    // Try resource directory first (production)
-    if let Ok(dir) = app.path().resource_dir() {
-        // Direct path (when resources are at root)
-        let direct = dir.join("server.js");
-        if direct.exists() {
-            return direct;
-        }
-        // server-dist/ prefix (when bundled from ../server-dist/**)
-        let bundled = dir.join("server-dist").join("server.js");
-        if bundled.exists() {
-            return bundled;
+fn find_server_js(app: &tauri::App) -> Option<PathBuf> {
+    let candidates = if let Ok(dir) = app.path().resource_dir() {
+        vec![
+            dir.join("server.js"),
+            dir.join("server-dist").join("server.js"),
+            dir.join("_up_").join("server-dist").join("server.js"),
+        ]
+    } else {
+        vec![]
+    };
+
+    for p in &candidates {
+        if p.exists() {
+            eprintln!("[信息] 找到 server.js: {}", p.display());
+            return Some(p.clone());
         }
     }
-    // Fallback: CWD (dev mode)
-    PathBuf::from("server.js")
+
+    // Dev mode fallback
+    let cwd = PathBuf::from("server.js");
+    if cwd.exists() {
+        return Some(cwd);
+    }
+
+    eprintln!("[错误] 未找到 server.js，搜索路径:");
+    for p in &candidates {
+        eprintln!("       {}", p.display());
+    }
+    None
 }
 
 fn ensure_server(app: &tauri::App) -> Option<Child> {
     let is_running = TcpStream::connect_timeout(
-        &"127.0.0.1:3000".parse().unwrap(),
+        &"127.0.0.1:22580".parse().unwrap(),
         Duration::from_millis(500),
     )
     .is_ok();
@@ -53,18 +67,27 @@ fn ensure_server(app: &tauri::App) -> Option<Child> {
         return None;
     }
 
-    let server_js = find_server_js(app);
-    eprintln!("[启动] Express API 服务: {}", server_js.display());
+    let server_js = match find_server_js(app) {
+        Some(p) => p,
+        None => {
+            eprintln!("[错误] 找不到 server.js，服务无法启动");
+            return None;
+        }
+    };
+
+    let cwd = server_js.parent().unwrap_or(std::path::Path::new("."));
+    eprintln!("[启动] Express API: {}", server_js.display());
+    eprintln!("[启动] 工作目录: {}", cwd.display());
 
     match Command::new("node")
         .arg(&server_js)
-        .current_dir(server_js.parent().unwrap_or(std::path::Path::new(".")))
+        .current_dir(cwd)
+        .creation_flags(0x08000000)
         .spawn()
     {
         Ok(c) => Some(c),
         Err(e) => {
             eprintln!("[错误] 无法启动 Node.js: {}", e);
-            eprintln!("       请确认已安装 Node.js 且 server.js 存在于程序目录");
             None
         }
     }
@@ -73,7 +96,7 @@ fn ensure_server(app: &tauri::App) -> Option<Child> {
 fn wait_for_server(max_secs: u32) {
     for i in 0..(max_secs * 2) {
         if TcpStream::connect_timeout(
-            &"127.0.0.1:3000".parse().unwrap(),
+            &"127.0.0.1:22580".parse().unwrap(),
             Duration::from_millis(500),
         )
         .is_ok()
@@ -88,6 +111,12 @@ fn wait_for_server(max_secs: u32) {
 
 pub fn run() {
     tauri::Builder::default()
+        .plugin(tauri_plugin_single_instance::init(|app, _argv, _cwd| {
+            if let Some(w) = app.get_webview_window("main") {
+                let _ = w.show();
+                let _ = w.set_focus();
+            }
+        }))
         .plugin(tauri_plugin_autostart::init(tauri_plugin_autostart::MacosLauncher::LaunchAgent, None))
         .setup(|app| {
             // 1. 后台启动 Express server，不阻塞 UI

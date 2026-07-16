@@ -2,7 +2,7 @@
   "roots": [
     "D:\\Desktop\\kaoyan"
   ],
-  "port": 3000,
+  "port": 22580,
   "maxFileSizeMB": 500,
   "showHiddenFiles": false
 }

@@ -4,12 +4,32 @@ const fs = require('fs');
 const os = require('os');
 
 // ============ 加载配置 ============
-const configPath = path.join(__dirname, 'config.json');
-if (!fs.existsSync(configPath)) {
-  console.error('❌ config.json 未找到，请创建配置文件');
-  process.exit(1);
+
+// 安装目录可能只读（Program Files），用户数据存 %APPDATA%
+const userDataDir = path.join(
+  process.env.APPDATA || path.join(os.homedir(), 'AppData', 'Roaming'),
+  'LanDisk'
+);
+const defaultConfigPath = path.join(__dirname, 'config.json');
+const userConfigPath = path.join(userDataDir, 'config.json');
+
+// 首次运行：复制默认配置到用户目录
+if (!fs.existsSync(userDataDir)) {
+  fs.mkdirSync(userDataDir, { recursive: true });
+}
+if (!fs.existsSync(userConfigPath) && fs.existsSync(defaultConfigPath)) {
+  fs.copyFileSync(defaultConfigPath, userConfigPath);
 }
 
+// 加载配置（优先用户目录，因为可写）
+const configPath = fs.existsSync(userConfigPath) ? userConfigPath : defaultConfigPath;
+console.log(`[配置] 路径: ${configPath}`);
+try {
+  fs.accessSync(configPath, fs.constants.W_OK);
+  console.log(`[配置] 可写: 是`);
+} catch {
+  console.log(`[配置] 可写: 否`);
+}
 const config = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
 
 // 规范化根目录路径
@@ -25,7 +45,7 @@ config.roots = (config.roots || []).filter(r => {
 });
 
 // 默认值
-config.port = config.port || 3000;
+config.port = config.port || 22580;
 config.maxFileSizeMB = config.maxFileSizeMB || 500;
 config.showHiddenFiles = config.showHiddenFiles || false;
 
@@ -79,7 +99,13 @@ app.get('/api/server-info', (req, res) => {
 // ============ 根目录管理 ============
 
 function saveConfig() {
-  fs.writeFileSync(configPath, JSON.stringify(config, null, 2), 'utf-8');
+  try {
+    fs.writeFileSync(configPath, JSON.stringify(config, null, 2), 'utf-8');
+    console.log('[配置] 已保存');
+  } catch (err) {
+    console.error('[配置] 保存失败:', err.message);
+    throw err;
+  }
 }
 
 // 获取根目录列表
@@ -125,7 +151,9 @@ app.post('/api/roots', (req, res) => {
   }
 
   config.roots.push(absPath);
-  saveConfig();
+  try { saveConfig(); } catch (err) {
+    return res.status(500).json({ error: '保存配置失败: ' + err.message });
+  }
 
   res.json({
     roots: config.roots.map(r => ({
@@ -148,7 +176,9 @@ app.delete('/api/roots', (req, res) => {
   }
 
   config.roots.splice(idx, 1);
-  saveConfig();
+  try { saveConfig(); } catch (err) {
+    return res.status(500).json({ error: '保存配置失败: ' + err.message });
+  }
 
   res.json({
     roots: config.roots.map(r => ({

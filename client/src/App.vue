@@ -14,7 +14,7 @@
       </div>
 
       <!-- 手机连接 Dialog -->
-      <el-dialog v-model="showQR" title="📱 手机扫码连接" width="360px" center destroy-on-close>
+      <el-dialog v-model="showQR" title="📱 手机扫码访问" width="360px" center destroy-on-close>
         <div class="qr-body">
           <img v-if="qrDataUrl" :src="qrDataUrl" class="qr-image" alt="QR Code" />
           <el-skeleton v-else :rows="1" animated style="width:200px;height:200px;margin:0 auto" />
@@ -60,6 +60,24 @@
     </el-dialog>
 
     <el-main class="app-main">
+      <el-alert
+        v-if="serverRetrying"
+        title="正在连接服务..."
+        type="info"
+        description="等待后端启动中，请稍候"
+        show-icon
+        :closable="false"
+        style="margin-bottom:12px"
+      />
+      <el-alert
+        v-if="serverDown"
+        title="无法连接到后端服务"
+        type="error"
+        description="请确认已安装 Node.js 并且 node 命令在系统 PATH 中。安装地址: https://nodejs.org"
+        show-icon
+        :closable="false"
+        style="margin-bottom:12px"
+      />
       <router-view />
     </el-main>
 
@@ -95,13 +113,32 @@ async function loadRoots() {
   }
 }
 
-onMounted(async () => {
-  loadRoots()
+const serverDown = ref(false)
+const serverRetrying = ref(false)
+let retryTimer = null
+
+async function tryConnect(retries = 5) {
+  serverRetrying.value = retries < 5
   try {
     const res = await api.get('/server-info')
     serverUrl.value = res.data.url
     qrDataUrl.value = await QRCode.toDataURL(res.data.url, { width: 200, margin: 1 })
-  } catch { /* ignore */ }
+    serverDown.value = false
+    serverRetrying.value = false
+    loadRoots()  // 重新加载根目录
+  } catch {
+    if (retries > 0) {
+      retryTimer = setTimeout(() => tryConnect(retries - 1), 1000)
+    } else {
+      serverDown.value = true
+      serverRetrying.value = false
+    }
+  }
+}
+
+onMounted(() => {
+  loadRoots()
+  tryConnect()
 })
 provide('roots', roots)
 
@@ -122,7 +159,17 @@ async function handleAddRoot() {
     roots.value = res.data.roots || []
     newRootPath.value = ''
   } catch (err) {
-    settingsError.value = err.response?.data?.error || '添加失败'
+    console.error('[添加目录] 失败:', err)
+    if (err.response) {
+      console.error('[添加目录] 状态码:', err.response.status)
+      console.error('[添加目录] 响应:', err.response.data)
+      settingsError.value = err.response.data?.error || `服务器错误 (${err.response.status})`
+    } else if (err.request) {
+      console.error('[添加目录] 无响应，请确认 Express 服务是否启动')
+      settingsError.value = '无法连接到服务，请重启应用'
+    } else {
+      settingsError.value = err.message || '添加失败'
+    }
   } finally {
     adding.value = false
   }
