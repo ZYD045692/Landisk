@@ -15,7 +15,7 @@
           {{ roots.length }} 个目录
         </el-tag>
         <el-button circle :icon="Iphone" size="small" @click="showQR = true" />
-        <el-button circle :icon="Setting" size="small" @click="showSettings = true" />
+        <el-button circle :icon="Setting" size="small" @click="openSettings" />
         <el-button circle :icon="Reading" size="small" @click="openLogs" />
       </div>
 
@@ -33,40 +33,62 @@
       </el-dialog>
     </el-header>
 
-    <!-- 目录管理 Dialog -->
-    <el-dialog v-model="showSettings" title="管理共享目录" width="520px" destroy-on-close>
+    <!-- 设置 Dialog -->
+    <el-dialog v-model="showSettings" title="设置" width="520px" destroy-on-close>
       <div class="settings-body">
-        <!-- 现有目录列表 -->
-        <div v-if="roots.length === 0" class="empty-hint">暂无共享目录</div>
-        <div v-for="root in roots" :key="root.path" class="root-item">
-          <div class="root-info">
-            <el-icon :size="18"><Folder /></el-icon>
-            <span class="root-name">{{ root.name }}</span>
-            <span class="root-path">{{ root.path }}</span>
+        <div class="settings-section">
+          <div class="section-title">服务配置</div>
+          <div class="setting-row">
+            <span class="setting-label">端口号</span>
+            <el-input-number v-model="configPort" :min="1" :max="65535" size="small" controls-position="right" style="width:160px" />
           </div>
-          <el-button type="danger" size="small" plain @click="handleRemoveRoot(root.path)">
-            移除
-          </el-button>
+          <div class="setting-row">
+            <span class="setting-label">最大上传 (MB)</span>
+            <el-input-number v-model="configMaxSize" :min="1" :max="9999" size="small" controls-position="right" style="width:160px" />
+          </div>
+          <div class="setting-row">
+            <span class="setting-label">显示隐藏文件</span>
+            <el-switch v-model="configShowHidden" size="small" />
+          </div>
+          <div class="setting-actions">
+            <el-button type="primary" size="small" @click="handleSaveConfig" :loading="configSaving">保存设置</el-button>
+            <span v-if="configSaved" class="success-msg">✓ 已保存</span>
+          </div>
         </div>
 
-        <!-- 添加新目录 -->
-        <div class="add-section">
-          <el-input
-            v-model="newRootPath"
-            placeholder="输入目录绝对路径，如 D:\Share"
-            clearable
-            @keyup.enter="handleAddRoot"
-          />
-          <el-button type="primary" size="small" @click="handleAddRoot" :loading="adding">
-            添加
-          </el-button>
+        <el-divider />
+
+        <div class="settings-section">
+          <div class="section-title">共享目录</div>
+          <div v-if="roots.length === 0" class="empty-hint">暂无共享目录</div>
+          <div v-for="root in roots" :key="root.path" class="root-item">
+            <div class="root-info">
+              <el-icon :size="18"><Folder /></el-icon>
+              <span class="root-name">{{ root.name }}</span>
+              <span class="root-path">{{ root.path }}</span>
+            </div>
+            <el-button type="danger" size="small" plain @click="handleRemoveRoot(root.path)">
+              移除
+            </el-button>
+          </div>
+          <div class="add-section">
+            <el-input
+              v-model="newRootPath"
+              placeholder="输入目录绝对路径，如 D:\Share"
+              clearable
+              @keyup.enter="handleAddRoot"
+            />
+            <el-button type="primary" size="small" @click="handleAddRoot" :loading="adding">
+              添加
+            </el-button>
+          </div>
         </div>
         <div v-if="settingsError" class="error-msg">{{ settingsError }}</div>
       </div>
     </el-dialog>
 
     <!-- 日志查看 Dialog -->
-    <el-dialog v-model="showLogs" title="服务器日志" width="750px" top="2vh" destroy-on-close @close="onLogsClose">
+    <el-dialog v-model="showLogs" title="服务器日志" width="750px" top="5vh" destroy-on-close @close="onLogsClose">
       <div class="logs-body">
         <div class="logs-toolbar">
           <div class="log-level-filters">
@@ -135,7 +157,7 @@
 import { ref, computed, watch, onMounted, onUnmounted, nextTick, provide } from 'vue'
 import { Setting, Iphone, Reading, Refresh } from '@element-plus/icons-vue'
 import QRCode from 'qrcode'
-import { fetchRoots, addRoot, removeRoot, fetchLogs } from './api'
+import { fetchRoots, addRoot, removeRoot, fetchLogs, fetchConfig, updateConfig } from './api'
 import api from './api'
 import xIcon from './assets/letter-x.svg'
 import picIcon from './assets/picture.svg'
@@ -146,6 +168,13 @@ const showQR = ref(false)
 const newRootPath = ref('')
 const adding = ref(false)
 const settingsError = ref('')
+
+// 配置
+const configPort = ref(22580)
+const configMaxSize = ref(500)
+const configShowHidden = ref(false)
+const configSaving = ref(false)
+const configSaved = ref(false)
 const serverUrl = ref('')
 const qrDataUrl = ref('')
 const copied = ref(false)
@@ -247,6 +276,42 @@ async function handleRemoveRoot(targetPath) {
   } catch (err) {
     settingsError.value = err.response?.data?.error || '移除失败'
   }
+}
+
+// ============ 配置管理 ============
+
+async function loadConfig() {
+  try {
+    const res = await fetchConfig()
+    configPort.value = res.data.port
+    configMaxSize.value = res.data.maxFileSizeMB
+    configShowHidden.value = res.data.showHiddenFiles
+  } catch {}
+}
+
+async function handleSaveConfig() {
+  configSaving.value = true
+  configSaved.value = false
+  try {
+    await updateConfig({
+      port: configPort.value,
+      maxFileSizeMB: configMaxSize.value,
+      showHiddenFiles: configShowHidden.value
+    })
+    configSaved.value = true
+    setTimeout(() => configSaved.value = false, 2000)
+  } catch (err) {
+    settingsError.value = err.response?.data?.error || '保存失败'
+  } finally {
+    configSaving.value = false
+  }
+}
+
+// ============ 设置面板 ============
+
+function openSettings() {
+  showSettings.value = true
+  loadConfig()
 }
 
 // ============ 日志查看 ============
@@ -414,19 +479,60 @@ html, body, #app {
   .app-main {
     padding: 8px;
   }
+  /* 小屏弹窗宽度适配 */
+  .el-dialog {
+    width: 92vw !important;
+    max-width: none !important;
+  }
 }
 
 /* 设置面板 */
 .header-right {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 6px;
 }
 
 .settings-body {
   display: flex;
   flex-direction: column;
   gap: 12px;
+}
+
+.settings-section {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.section-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: #303133;
+}
+
+.setting-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 4px 0;
+}
+
+.setting-label {
+  font-size: 13px;
+  color: #606266;
+}
+
+.setting-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding-top: 4px;
+}
+
+.success-msg {
+  font-size: 13px;
+  color: #67c23a;
 }
 
 .empty-hint {

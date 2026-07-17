@@ -72,4 +72,19 @@ export function fetchLogs(lines = 200) {
   return api.get('/logs', { params: { lines } })
 }
 
+/**
+ * 获取配置
+ */
+export function fetchConfig() {
+  return api.get('/config')
+}
+
+/**
+ * 更新配置
+ * @param {object} data - { port, maxFileSizeMB, showHiddenFiles }
+ */
+export function updateConfig(data) {
+  return api.put('/config', data)
+}
+
 export default api

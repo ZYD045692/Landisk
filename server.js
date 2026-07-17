@@ -199,6 +199,41 @@ app.delete('/api/roots', (req, res) => {
   });
 });
 
+// ============ 配置管理 ============
+
+app.get('/api/config', (req, res) => {
+  res.json({
+    port: config.port,
+    maxFileSizeMB: config.maxFileSizeMB,
+    showHiddenFiles: config.showHiddenFiles
+  });
+});
+
+app.put('/api/config', (req, res) => {
+  const { port, maxFileSizeMB, showHiddenFiles } = req.body || {};
+  if (port !== undefined) {
+    const p = Number(port);
+    if (!Number.isInteger(p) || p < 1 || p > 65535) {
+      return res.status(400).json({ error: '端口号必须在 1-65535 之间' });
+    }
+    config.port = p;
+  }
+  if (maxFileSizeMB !== undefined) {
+    const m = Number(maxFileSizeMB);
+    if (!Number.isFinite(m) || m < 1 || m > 9999) {
+      return res.status(400).json({ error: '文件大小上限必须在 1-9999 MB 之间' });
+    }
+    config.maxFileSizeMB = m;
+  }
+  if (showHiddenFiles !== undefined) {
+    config.showHiddenFiles = Boolean(showHiddenFiles);
+  }
+  try { saveConfig(); } catch (err) {
+    return res.status(500).json({ error: '保存配置失败: ' + err.message });
+  }
+  res.json({ success: true });
+});
+
 // ============ 静态文件 ============
 
 // 搜索 client/dist（适配不同打包路径）
