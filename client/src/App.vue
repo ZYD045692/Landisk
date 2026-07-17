@@ -14,9 +14,9 @@
         <el-tag v-if="roots.length > 0" type="info" size="small">
           {{ roots.length }} 个目录
         </el-tag>
-        <el-button circle :icon="Iphone" size="small" @click="showQR = true" />
-        <el-button circle :icon="Setting" size="small" @click="openSettings" />
-        <el-button circle :icon="Reading" size="small" @click="openLogs" />
+        <el-button circle :icon="Iphone" size="small" title="手机扫码" @click="showQR = true" />
+        <el-button circle :icon="Setting" size="small" title="设置" @click="openSettings" />
+        <el-button circle :icon="Reading" size="small" title="服务器日志" @click="openLogs" />
       </div>
 
       <!-- 手机连接 Dialog -->
@@ -509,6 +509,9 @@ html, body, #app {
   display: flex;
   align-items: center;
   gap: 6px;
+}
+.header-right .el-tag {
+  margin: 0;
 }
 
 .settings-body {
