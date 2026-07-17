@@ -106,7 +106,8 @@ function createUploadRouter(config) {
       }
 
       const files = safeFiles.map(f => {
-        const name = fixEncoding(f.filename);
+        // filename 回调里已用 fixEncoding 转了一次，直接取
+        const name = f.filename;
         const originalName = fixEncoding(f.originalname);
         if (req._replaceList.includes(originalName)) {
           replaced++;

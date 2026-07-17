@@ -31,6 +31,7 @@
       :loading="loading"
       :error="error"
       :current-path="currentPath"
+      :pin-top="pinnedNames"
       @open-dir="openDirectory"
       @retry="loadDirectory"
       @deleted="refreshDirectory"
@@ -53,6 +54,7 @@ const currentPath = ref('/')
 const entries = ref([])
 const loading = ref(false)
 const error = ref('')
+const pinnedNames = ref([])
 const roots = inject('roots', ref([]))
 const activeRoot = ref(0)
 
@@ -89,14 +91,8 @@ watch(() => route.query.path, (newPath) => {
 
 // 上传完成后：静默拉取新列表，并把上传的文件排到最前
 function onUploaded(newNames) {
-  refreshDirectory().then(() => {
-    if (newNames && newNames.length > 0) {
-      const top = new Set(newNames)
-      const fresh = entries.value.filter(e => top.has(e.name))
-      const rest = entries.value.filter(e => !top.has(e.name))
-      entries.value = [...fresh, ...rest]
-    }
-  })
+  pinnedNames.value = newNames || []
+  refreshDirectory()
 }
 
 function onRootChange() {
@@ -109,6 +105,7 @@ async function loadDirectory() {
   loading.value = true
   error.value = ''
   entries.value = []
+  pinnedNames.value = []
 
   try {
     const rootIdx = roots.value.length > 1 ? activeRoot.value : undefined

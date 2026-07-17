@@ -196,7 +196,8 @@ const props = defineProps({
   entries: { type: Array, default: () => [] },
   loading: { type: Boolean, default: false },
   error: { type: String, default: '' },
-  currentPath: { type: String, default: '/' }
+  currentPath: { type: String, default: '/' },
+  pinTop: { type: Array, default: () => [] }
 })
 
 const emit = defineEmits(['open-dir', 'retry', 'deleted'])
@@ -244,6 +245,11 @@ const filteredEntries = computed(() => {
     const va = (a.extension || ''), vb = (b.extension || '')
     return sortAsc.value ? va.localeCompare(vb) : vb.localeCompare(va)
   })
+  // 新上传的文件保持置顶
+  if (props.pinTop.length > 0) {
+    const top = new Set(props.pinTop)
+    list = [...list.filter(e => top.has(e.name)), ...list.filter(e => !top.has(e.name))]
+  }
   return list
 })
 
