@@ -23,6 +23,13 @@
     <!-- 冲突弹窗 -->
     <el-dialog v-model="showConflict" title="同名文件处理" width="480px" destroy-on-close>
       <div class="conflict-body">
+        <div class="conflict-actions">
+          <span class="conflict-actions-label">全部设为：</span>
+          <el-button size="small" @click="setAllChoices('replace')">替换</el-button>
+          <el-button size="small" @click="setAllChoices('keep')">保留两份</el-button>
+          <el-button size="small" @click="setAllChoices('skip')">取消</el-button>
+        </div>
+        <el-divider style="margin:4px 0" />
         <div v-for="name in conflictList" :key="name" class="conflict-row">
           <span class="conflict-name">📄 {{ name }}</span>
           <el-radio-group v-model="conflictChoices[name]">
@@ -98,8 +105,8 @@ function triggerFileInput() {
 
 // 单次上传的完整流程：冲突检查 → 弹窗确认 → XHR 上传
 async function uploadFiles(fileList) {
-  // 过滤掉文件夹和空文件
-  let files = Array.from(fileList).filter(f => f.size > 0 && f.type !== '')
+  // 过滤掉文件夹（浏览器中文件夹 size=0 且 type=''）
+  let files = Array.from(fileList).filter(f => !(f.size === 0 && f.type === ''))
   if (files.length === 0) {
     showTemporaryMsg('不支持上传文件夹，请选择文件', true)
     return
@@ -205,6 +212,13 @@ function xhrUpload(formData) {
   })
 }
 
+// 全部设为统一操作
+function setAllChoices(value) {
+  for (const n of conflictList.value) {
+    conflictChoices.value[n] = value
+  }
+}
+
 // 冲突弹窗：返回 Promise，用户确认后 resolve(choices)，取消则 resolve(null)
 function showConflictDialog(conflicts) {
   return new Promise(resolve => {
@@ -287,6 +301,17 @@ function showTemporaryMsg(msg, isError) {
   display: flex;
   flex-direction: column;
   gap: 14px;
+}
+
+.conflict-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.conflict-actions-label {
+  font-size: 13px;
+  color: #909399;
+  white-space: nowrap;
 }
 
 .conflict-row {

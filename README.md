@@ -23,7 +23,8 @@ PC 和手机访问的是同一个 Express 服务，前端只存一份。
 
 - 文件浏览、多根目录切换、面包屑导航
 - 全局拖拽：拖文件到窗口任意位置即可上传，毛玻璃全屏提示
-- 冲突弹窗：同名文件可选替换 / 保留两份 / 取消
+- 冲突弹窗：同名文件可选替换 / 保留两份 / 取消，支持批量统一操作
+- 文件列表刷新时逐格 shimmer 加载效果，列名不受影响
 - 删除进回收站，不丢失数据
 - 批量删除：多选 + 并行执行 + 百分比进度条
 - 搜索：文件名过滤
@@ -31,11 +32,13 @@ PC 和手机访问的是同一个 Express 服务，前端只存一份。
 - 分页：5 / 10 / 20 / 50 条
 - 70+ 种文件图标，彩色分类
 - 界面内嵌二维码，手机扫码即连
+- 内置日志查看器：始终自动刷新、粘性底部、等级/文本过滤、清除显示/清除本地
 - 系统托盘，关闭窗口后台运行
 - 开机自启（静默托盘，不弹窗）
 - 单实例，多点图标不重复启动
-- 界面管理共享目录，持久化到 `%APPDATA%/LanDisk/`
+- 界面管理共享目录，持久化到 `%USERPROFILE%\.landisk\`
 - 中文文件名上传不乱码
+- 可执行扩展名上传阻断（.exe .bat .cmd .ps1 等）
 - PC / 手机同源访问，纯本地无联网
 
 ## 安装使用
@@ -56,7 +59,7 @@ PC 和手机访问的是同一个 Express 服务，前端只存一份。
 
 - 电脑手机需在同一 WiFi
 - 首次启动 Windows 防火墙会弹窗，**必须允许** Node.js
-- 端口 `22580`，如冲突修改 `config.json`
+- 端口 `22580`，如冲突修改 `%USERPROFILE%\.landisk\config.json`
 
 ## 开发
 
@@ -92,8 +95,11 @@ npx tauri build        # 生成 NSIS 安装包
 │   ├── files.js         # 目录列表
 │   ├── upload.js        # 上传（去重+阻断）
 │   ├── download.js      # 文件下载
-│   └── delete.js        # 删除（回收站）
-│   └── upload/check      # 上传冲突检测
+│   ├── delete.js        # 删除（回收站）
+│   ├── logs.js          # 日志读取/清空
+│   └── roots.js         # 根目录管理
+├── utils/
+│   └── logger.js        # 环形缓冲区日志 + 文件写入
 ├── scripts/
 │   └── bundle-server.js # 打包服务端+前端到 server-dist/
 ├── src-tauri/           # Tauri Rust
@@ -101,7 +107,7 @@ npx tauri build        # 生成 NSIS 安装包
 │       ├── main.rs
 │       └── lib.rs       # 窗口/托盘/Express 管理
 ├── server.js            # Express 入口
-├── config.json          # 配置文件
+├── config.json          # 默认配置
 └── start.bat            # 开发启动
 ```
 
@@ -127,4 +133,4 @@ npx tauri build        # 生成 NSIS 安装包
 }
 ```
 
-共享目录也可通过界面 ⚙ 增删，自动持久化到 `%APPDATA%/LanDisk/`。
+共享目录也可通过界面 ⚙ 增删，自动持久化到 `%USERPROFILE%\.landisk\`。
