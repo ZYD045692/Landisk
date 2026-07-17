@@ -87,7 +87,7 @@
           <div v-else v-for="(entry, i) in filteredLogs" :key="i" class="log-entry">
             <span class="log-ts">{{ entry.timestamp }}</span>
             <span class="log-level" :class="'log-level-' + entry.level.toLowerCase()">{{ entry.level }}</span>
-            <span class="log-msg">{{ entry.message }}</span>
+            <span class="log-msg">{{ entry.message.trimStart() }}</span>
           </div>
         </div>
       </div>
@@ -611,19 +611,20 @@ html, body, #app {
 
 .logs-list {
   flex: 1;
-  overflow-y: auto;
+  overflow: auto;
   background: #1a1a2e;
   border-radius: 6px;
   padding: 8px 0;
   font-family: 'Cascadia Code', 'Fira Code', 'Consolas', monospace;
   font-size: 12px;
-  line-height: 1.6;
+  line-height: 1.8;
 }
 
 .log-entry {
   display: flex;
   gap: 8px;
   padding: 1px 12px;
+  white-space: nowrap;
 }
 
 .log-entry:hover {
@@ -633,11 +634,12 @@ html, body, #app {
 .log-ts {
   color: #6b7280;
   flex-shrink: 0;
+  width: 160px;
 }
 
 .log-level {
   flex-shrink: 0;
-  width: 44px;
+  width: 52px;
   text-align: center;
   border-radius: 2px;
   font-size: 11px;
@@ -646,8 +648,8 @@ html, body, #app {
 
 .log-msg {
   color: #d1d5db;
-  word-break: break-all;
-  white-space: pre-wrap;
+  flex: 1;
+  min-width: 0;
 }
 
 .log-level-filters {
