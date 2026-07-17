@@ -84,9 +84,9 @@
         <div class="logs-list" ref="logsListRef" @scroll="onLogsScroll">
           <div v-if="logsLoading && filteredLogs.length === 0" class="logs-status">加载中...</div>
           <div v-else-if="filteredLogs.length === 0" class="logs-status">暂无日志</div>
-          <div v-else v-for="(entry, i) in filteredLogs" :key="i" class="log-entry">
+          <div v-else v-for="(entry, i) in filteredLogs" :key="i" class="log-entry" :class="'level-' + entry.level.toLowerCase()">
             <span class="log-ts">{{ entry.timestamp }}</span>
-            <span class="log-level" :class="'log-level-' + entry.level.toLowerCase()">{{ entry.level }}</span>
+            <span class="log-level">{{ entry.level }}</span>
             <span class="log-msg">{{ entry.message.trimStart() }}</span>
           </div>
         </div>
@@ -644,6 +644,8 @@ html, body, #app {
   border-radius: 2px;
   font-size: 11px;
   font-weight: 600;
+  color: var(--level-color);
+  background: var(--level-bg);
 }
 
 .log-msg {
@@ -665,17 +667,22 @@ html, body, #app {
   padding: 24px;
 }
 
-/* 日志等级颜色 */
-.log-level-info {
-  color: #60a5fa;
-  background: rgba(96,165,250,0.12);
+/* 日志等级颜色（放在 .log-entry 上，传给子元素） */
+.level-info {
+  --level-color: #60a5fa;
+  --level-bg: rgba(96,165,250,0.12);
 }
-.log-level-warn {
-  color: #fbbf24;
-  background: rgba(251,191,36,0.12);
+.level-warn {
+  --level-color: #fbbf24;
+  --level-bg: rgba(251,191,36,0.12);
 }
-.log-level-error {
-  color: #f87171;
-  background: rgba(248,113,113,0.12);
+.level-error {
+  --level-color: #f87171;
+  --level-bg: rgba(248,113,113,0.12);
+}
+
+.log-msg {
+  border-left: 3px solid var(--level-color);
+  padding-left: 10px;
 }
 </style>
