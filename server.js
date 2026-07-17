@@ -212,13 +212,14 @@ function findClientDist() {
 const clientDist = findClientDist();
 if (clientDist) {
   logger.info(`[静态] 前端目录: ${clientDist}`);
-  app.use(express.static(clientDist, { etag: false, lastModified: false }));
+  // 禁止缓存 HTML/JS/CSS（浏览器经常缓存旧版导致看不到更新）
   app.use((req, res, next) => {
     if (req.path.endsWith('.html') || req.path.endsWith('.js') || req.path.endsWith('.css')) {
       res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
     }
     next();
   });
+  app.use(express.static(clientDist));
 } else {
   logger.warn('[静态] 未找到前端目录，仅提供 API 服务');
 }

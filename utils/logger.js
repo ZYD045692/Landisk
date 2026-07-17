@@ -3,10 +3,14 @@ const path = require('path');
 
 const MAX_SIZE = 1 * 1024 * 1024; // 1 MB
 const LOG_FILE = 'landisk.log';
+const MAX_BUFFER = 2000; // 内存环形缓冲区上限
 
 let _logDir = null;
 let _logFilePath = null;
 let _currentDate = null;
+
+// 内存环形缓冲区 — API 从此读取，零文件 I/O
+const ringBuffer = [];
 
 function pad2(n) {
   return String(n).padStart(2, '0');
@@ -42,9 +46,9 @@ function rotateIfNeeded() {
   if (!_logFilePath) return;
   const today = todayStr();
 
-  // 日期变更 → 归档
+  // 日期变更 → 归档（用 _currentDate 命名，因为归档的是旧日期的内容）
   if (today !== _currentDate) {
-    archive(today);
+    archive(_currentDate);
     _currentDate = today;
     return;
   }
@@ -80,22 +84,54 @@ function archive(dateStr) {
 function formatEntry(level, args) {
   const ts = formatTimestamp();
   const msg = args.map(a => (typeof a === 'object' ? JSON.stringify(a) : String(a))).join(' ');
-  return `[${ts}] [${level}] ${msg}`;
+  return { ts, msg, text: `[${ts}] [${level}] ${msg}` };
 }
 
 function write(level, stream) {
   return (...args) => {
-    const entry = formatEntry(level, args);
+    const { ts, msg, text } = formatEntry(level, args);
+
+    // 内存环形缓冲区（供 API 即时读取）
+    ringBuffer.push({ timestamp: ts, level, message: msg });
+    if (ringBuffer.length > MAX_BUFFER) {
+      ringBuffer.splice(0, ringBuffer.length - MAX_BUFFER);
+    }
+
     // 写入文件
     if (_logFilePath) {
       try {
         rotateIfNeeded();
-        fs.appendFileSync(_logFilePath, entry + '\n', 'utf-8');
+        fs.appendFileSync(_logFilePath, text + '\n', 'utf-8');
       } catch { /* 写入失败时静默处理 */ }
     }
+
     // 写入控制台
-    stream.write(entry + '\n');
+    stream.write(text + '\n');
   };
+}
+
+/**
+ * 从内存环形缓冲区读取日志条目
+ * @param {number} [lines=200] - 返回条数
+ * @param {object} [options]
+ * @param {string} [options.level] - 按等级过滤（INFO/WARN/ERROR）
+ * @param {string} [options.search] - 按文本过滤
+ * @returns {Array<{timestamp, level, message}>}
+ */
+function getBuffer(lines = 200, options = {}) {
+  let result = ringBuffer;
+
+  if (options.level) {
+    const lv = options.level.toUpperCase();
+    result = result.filter(e => e.level === lv);
+  }
+
+  if (options.search) {
+    const s = options.search.toLowerCase();
+    result = result.filter(e => e.message.toLowerCase().includes(s));
+  }
+
+  return result.slice(-lines);
 }
 
 module.exports = {
@@ -104,5 +140,6 @@ module.exports = {
   warn: write('WARN', process.stdout),
   error: write('ERROR', process.stderr),
   getLogPath: () => _logFilePath,
-  getLogDir: () => _logDir
+  getLogDir: () => _logDir,
+  getBuffer
 };

@@ -65,20 +65,29 @@
       </div>
     </el-dialog>
 
-    <!-- LOGBOOK_DIALOG_START 日志查看 Dialog -->
-    <el-dialog v-model="showLogs" title="服务器日志" width="700px" top="3vh" destroy-on-close>
+    <!-- 日志查看 Dialog -->
+    <el-dialog v-model="showLogs" title="服务器日志" width="750px" top="2vh" destroy-on-close @close="onLogsClose">
       <div class="logs-body">
         <div class="logs-toolbar">
-          <el-input v-model="logFilter" placeholder="过滤日志..." clearable size="small" style="width:200px" />
-          <el-button size="small" :icon="Refresh" @click="loadLogs" :loading="logsLoading">刷新</el-button>
+          <div class="log-level-filters">
+            <el-button size="small" :type="logLevelFilter === '' ? 'primary' : 'default'" @click="logLevelFilter = ''">全部</el-button>
+            <el-button size="small" :type="logLevelFilter === 'INFO' ? 'primary' : 'default'" @click="logLevelFilter = 'INFO'">INFO</el-button>
+            <el-button size="small" :type="logLevelFilter === 'WARN' ? 'warning' : 'default'" @click="logLevelFilter = 'WARN'">WARN</el-button>
+            <el-button size="small" :type="logLevelFilter === 'ERROR' ? 'danger' : 'default'" @click="logLevelFilter = 'ERROR'">ERROR</el-button>
+          </div>
+          <el-input v-model="logFilter" placeholder="过滤日志..." clearable size="small" style="width:180px" />
+          <el-button size="small" :icon="Refresh" @click="loadLogs" :loading="logsLoading" />
           <span class="log-auto-label">
             <el-switch v-model="logAutoRefresh" size="small" /> 自动刷新
           </span>
         </div>
-        <div class="logs-list logs-XXX-MARKER">
-          {{ logEntries.length }} entries
-          <div v-for="(entry, i) in logEntries.slice(0, 20)" :key="i">
-            {{ entry.timestamp }} [{{ entry.level }}] {{ entry.message }}
+        <div class="logs-list" ref="logsListRef" @scroll="onLogsScroll">
+          <div v-if="logsLoading && filteredLogs.length === 0" class="logs-status">加载中...</div>
+          <div v-else-if="filteredLogs.length === 0" class="logs-status">暂无日志</div>
+          <div v-else v-for="(entry, i) in filteredLogs" :key="i" class="log-entry">
+            <span class="log-ts">{{ entry.timestamp }}</span>
+            <span class="log-level" :class="'log-level-' + entry.level.toLowerCase()">{{ entry.level }}</span>
+            <span class="log-msg">{{ entry.message }}</span>
           </div>
         </div>
       </div>
@@ -123,8 +132,8 @@
 </template>
 
 <script setup>
-import { ref, watch, onMounted, onUnmounted, provide } from 'vue'
-import { Setting, Iphone, Reading } from '@element-plus/icons-vue'
+import { ref, computed, watch, onMounted, onUnmounted, nextTick, provide } from 'vue'
+import { Setting, Iphone, Reading, Refresh } from '@element-plus/icons-vue'
 import QRCode from 'qrcode'
 import { fetchRoots, addRoot, removeRoot, fetchLogs } from './api'
 import api from './api'
@@ -140,14 +149,6 @@ const settingsError = ref('')
 const serverUrl = ref('')
 const qrDataUrl = ref('')
 const copied = ref(false)
-
-// 日志查看
-const showLogs = ref(false)
-const logEntries = ref([])
-const logsLoading = ref(false)
-const logFilter = ref('')
-const logAutoRefresh = ref(true)
-let logTimer = null
 
 async function loadRoots() {
   try {
@@ -250,16 +251,44 @@ async function handleRemoveRoot(targetPath) {
 
 // ============ 日志查看 ============
 
+const showLogs = ref(false)
+const logEntries = ref([])
+const logsLoading = ref(false)
+const logFilter = ref('')
+const logLevelFilter = ref('')
+const logAutoRefresh = ref(true)
+const logsListRef = ref(null)
+const logsAtBottom = ref(true)
+let logTimer = null
+
+// 客户端过滤：等级 + 文本
+const filteredLogs = computed(() => {
+  let result = logEntries.value
+  if (logLevelFilter.value) {
+    result = result.filter(e => e.level === logLevelFilter.value)
+  }
+  if (logFilter.value) {
+    const s = logFilter.value.toLowerCase()
+    result = result.filter(e => e.message.toLowerCase().includes(s))
+  }
+  return result
+})
+
 function openLogs() {
   showLogs.value = true
   loadLogs()
+  startAutoRefresh()
 }
 
 async function loadLogs() {
   logsLoading.value = true
   try {
-    const res = await fetchLogs(200)
+    const res = await fetchLogs(500)
     logEntries.value = res.data || []
+    await nextTick()
+    if (logsAtBottom.value) {
+      scrollToBottom()
+    }
   } catch (e) {
     console.error('[日志] 加载失败:', e)
   } finally {
@@ -267,12 +296,45 @@ async function loadLogs() {
   }
 }
 
-watch(showLogs, (val) => {
-  if (val && logAutoRefresh.value && !logTimer) {
-    logTimer = setInterval(loadLogs, 5000)
-  } else if (!val && logTimer) {
+function onLogsScroll() {
+  const el = logsListRef.value
+  if (!el) return
+  const threshold = 30
+  logsAtBottom.value = el.scrollHeight - el.scrollTop - el.clientHeight < threshold
+}
+
+function scrollToBottom() {
+  const el = logsListRef.value
+  if (el) {
+    el.scrollTop = el.scrollHeight
+  }
+}
+
+function startAutoRefresh() {
+  if (logTimer) clearInterval(logTimer)
+  if (logAutoRefresh.value) {
+    logTimer = setInterval(loadLogs, 3000)
+  }
+}
+
+function onLogsClose() {
+  if (logTimer) {
     clearInterval(logTimer)
     logTimer = null
+  }
+}
+
+// 自动刷新开关变化时启停定时器
+watch(logAutoRefresh, (val) => {
+  if (showLogs.value) {
+    if (val) {
+      startAutoRefresh()
+    } else {
+      if (logTimer) {
+        clearInterval(logTimer)
+        logTimer = null
+      }
+    }
   }
 })
 </script>
@@ -589,13 +651,29 @@ html, body, #app {
   text-overflow: ellipsis;
 }
 
-.logs-loading {
-  padding: 12px;
+.log-level-filters {
+  display: flex;
+  gap: 4px;
+  flex-shrink: 0;
 }
 
-.logs-empty {
+.logs-status {
   color: #6b7280;
   text-align: center;
   padding: 24px;
+}
+
+/* 日志等级颜色 */
+.log-level-info {
+  color: #60a5fa;
+  background: rgba(96,165,250,0.12);
+}
+.log-level-warn {
+  color: #fbbf24;
+  background: rgba(251,191,36,0.12);
+}
+.log-level-error {
+  color: #f87171;
+  background: rgba(248,113,113,0.12);
 }
 </style>
