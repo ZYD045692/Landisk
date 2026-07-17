@@ -515,6 +515,14 @@ html, body, #app {
   padding: 0 4px;
 }
 
+/* 弹窗 body 去掉多余的左内边距 */
+.settings-body, .logs-body {
+  padding-left: 0;
+}
+.el-dialog__body {
+  padding: 20px;
+}
+
 .settings-body {
   display: flex;
   flex-direction: column;
