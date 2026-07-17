@@ -104,19 +104,25 @@ function onRootChange() {
 async function loadDirectory() {
   loading.value = true
   error.value = ''
-  entries.value = []
   pinnedNames.value = []
+
+  const startTime = Date.now()
 
   try {
     const rootIdx = roots.value.length > 1 ? activeRoot.value : undefined
     const res = await fetchFiles(currentPath.value, rootIdx)
-    if (res.data.isDirectory) {
-      entries.value = res.data.entries
-    }
+    entries.value = res.data.isDirectory ? res.data.entries : []
   } catch (err) {
     const msg = err.response?.data?.error || err.message || '加载失败'
     error.value = msg
+    entries.value = []
   } finally {
+    // 保证至少 400ms 的加载时长，让 shimmer 效果能看到
+    const elapsed = Date.now() - startTime
+    const minDuration = 400
+    if (elapsed < minDuration) {
+      await new Promise(r => setTimeout(r, minDuration - elapsed))
+    }
     loading.value = false
   }
 }

@@ -134,9 +134,14 @@ function getBuffer(lines = 200, options = {}) {
   return result.slice(-lines);
 }
 
-/** 清空内存环形缓冲区 */
+/** 清空内存环形缓冲区 + 日志文件 */
 function clearBuffer() {
   ringBuffer.length = 0;
+  if (_logFilePath) {
+    try {
+      fs.writeFileSync(_logFilePath, '', 'utf-8');
+    } catch { /* 忽略 */ }
+  }
 }
 
 module.exports = {

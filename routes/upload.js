@@ -119,10 +119,21 @@ function createUploadRouter(config) {
       });
 
       const parts = [];
+      if (uploaded > 0 && replaced > 0) {
+        // 同时有新增和替换时分为两条日志
+        logger.info(`新增 ${uploaded} 个 - ${files.filter(f => f.action !== 'replaced').map(f => f.name).join(', ')}`);
+        logger.info(`替换 ${replaced} 个：${files.filter(f => f.action === 'replaced').map(f => f.name).join(', ')}`);
+      } else if (uploaded > 0) {
+        logger.info(`新增 ${uploaded} 个：${files.map(f => f.name).join(', ')}`);
+      } else if (replaced > 0) {
+        logger.info(`替换 ${replaced} 个：${files.map(f => f.name).join(', ')}`);
+      }
+      if (blocked > 0) {
+        logger.info(`${blocked} 个文件类型不安全已跳过`);
+      }
       if (uploaded > 0) parts.push(`新增 ${uploaded} 个`);
       if (replaced > 0) parts.push(`替换 ${replaced} 个`);
       if (blocked > 0) parts.push(`${blocked} 个文件类型不安全已跳过`);
-      logger.info(`上传完成: ${parts.join('，')} - ${files.map(f => f.name).join(', ')}`);
 
       res.json({ message: parts.join('，'), files });
     });

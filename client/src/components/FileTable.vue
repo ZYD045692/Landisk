@@ -1,7 +1,7 @@
 <template>
   <div class="file-table-wrapper">
     <!-- 工具栏：搜索 + 批量操作 -->
-    <div v-if="!loading && !error && entries.length > 0" class="toolbar">
+    <div v-if="!error && entries.length > 0" class="toolbar">
       <div class="toolbar-left">
         <el-input
           v-model="searchQuery"
@@ -34,14 +34,14 @@
       </div>
     </div>
 
-    <!-- 加载中（仅初次加载/切换目录时显示） -->
-    <div v-if="loading" class="loading-state">
+    <!-- 首次加载骨架屏（无数据时） -->
+    <div v-if="loading && entries.length === 0" class="loading-state">
       <el-skeleton :rows="5" animated />
     </div>
 
     <!-- 错误 -->
     <el-result
-      v-else-if="error"
+      v-if="error"
       icon="error"
       :title="error"
       sub-title="请检查路径是否正确或稍后重试"
@@ -51,22 +51,22 @@
       </template>
     </el-result>
 
-    <!-- 空目录 -->
+    <!-- 空目录（仅非加载、非错误时显示） -->
     <el-empty
-      v-else-if="!loading && entries.length === 0"
+      v-if="!loading && !error && entries.length === 0"
       description="此文件夹为空"
       :image-size="120"
     />
 
     <!-- 文件列表 -->
-    <template v-else>
+    <template v-if="!error && entries.length > 0">
       <!-- 批量删除进度条（不隐藏表格） -->
       <div v-if="batchDeleting" style="padding:8px 12px;border-bottom:1px solid #ebeef5">
         <el-progress :percentage="deleteProgress" :stroke-width="6" :show-text="true" />
       </div>
-      <!-- PC 端表格 -->
       <div class="pc-table">
         <el-table
+          :cell-class-name="cellClass"
           :data="pagedEntries"
           style="width: 100%"
           stripe
@@ -135,7 +135,7 @@
       </div>
 
       <!-- 移动端卡片列表 -->
-      <div class="mobile-list">
+      <div class="mobile-list" :class="{ 'is-loading': loading }">
         <div
           v-for="row in pagedEntries"
           :key="row.name"
@@ -219,6 +219,15 @@ function toggleSort(field) {
     sortBy.value = field
     sortAsc.value = true
   }
+}
+
+// 刷新时数据格加载覆盖效果
+function cellClass({ row, column }) {
+  if (!props.loading) return ''
+  if (!row) return ''                      // 表头单元格跳过
+  if (column.type === 'selection') return '' // 复选框列跳过
+  if (column.label === '操作') return ''    // 操作列跳过
+  return 'cell-loading'
 }
 
 // 过滤
@@ -349,6 +358,8 @@ function handleRowClick(row) {
   border-radius: 8px;
   border: 1px solid #ebeef5;
   overflow: hidden;
+  scrollbar-gutter: stable;
+  position: relative;
 }
 
 /* 工具栏 */
@@ -366,13 +377,16 @@ function handleRowClick(row) {
 .toolbar-left {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 18px;
   flex-wrap: wrap;
 }
 
 .sort-btns {
   display: flex;
-  gap: 4px;
+  gap: 18px;
+}
+.sort-btns .el-button {
+  margin: 0 !important;
 }
 
 .batch-bar {
@@ -390,6 +404,58 @@ function handleRowClick(row) {
   padding: 24px;
 }
 
+.pc-table {
+  position: relative;
+}
+
+/* 刷新时数据格 shimmer 加载效果 */
+:deep(.cell-loading .cell) {
+  position: relative;
+  overflow: hidden;
+}
+/* el-icon 默认 position:relative 会高于 ::after，临时改为 static 让覆盖层在上面 */
+:deep(.cell-loading .cell .el-icon) {
+  position: static !important;
+}
+:deep(.cell-loading .cell)::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(90deg,
+    #e8e8ee 0%,
+    #f2f2f8 50%,
+    #e8e8ee 100%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 1.5s ease-in-out infinite;
+  border-radius: 6px;
+  pointer-events: none;
+}
+@keyframes shimmer {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+
+/* 移动端卡片加载效果 */
+.mobile-list.is-loading .mobile-file-info {
+  position: relative;
+  overflow: hidden;
+}
+.mobile-list.is-loading .mobile-file-info::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(90deg,
+    #e8e8ee 0%,
+    #f2f2f8 50%,
+    #e8e8ee 100%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 1.5s ease-in-out infinite;
+  border-radius: 6px;
+  pointer-events: none;
+}
+
 .file-name-cell {
   display: flex;
   align-items: center;
@@ -400,6 +466,7 @@ function handleRowClick(row) {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  min-width: 0;
 }
 
 .text-muted {
@@ -426,7 +493,7 @@ function handleRowClick(row) {
 
 .mobile-file-item {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   padding: 10px 12px;
   border-bottom: 1px solid #f2f3f5;
   transition: background 0.2s;

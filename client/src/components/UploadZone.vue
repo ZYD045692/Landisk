@@ -291,8 +291,8 @@ function showTemporaryMsg(msg, isError) {
 
 .conflict-row {
   display: flex;
-  justify-content: space-between;
   align-items: center;
+  gap: 12px;
   padding: 8px 12px;
   background: #fafafa;
   border-radius: 6px;
@@ -303,7 +303,12 @@ function showTemporaryMsg(msg, isError) {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  max-width: 60%;
+  flex-shrink: 1;
+  min-width: 0;
+}
+
+.conflict-row .el-radio-group {
+  flex-shrink: 0;
 }
 
 /* 移动端适配 */

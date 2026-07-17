@@ -98,21 +98,29 @@
             <el-button size="small" :type="logLevelFilter === 'ERROR' ? 'danger' : 'default'" @click="logLevelFilter = 'ERROR'">ERROR</el-button>
           </div>
           <el-input v-model="logFilter" placeholder="过滤日志..." clearable size="small" style="width:180px" />
-          <el-button size="small" :icon="Refresh" @click="loadLogs" :loading="logsLoading" />
-          <el-button size="small" @click="handleClearLogs">清除</el-button>
-          <span class="log-auto-label">
-            <el-switch v-model="logAutoRefresh" size="small" /> 自动刷新
-          </span>
-        </div>
-        <div class="logs-list" ref="logsListRef" @scroll="onLogsScroll">
-          <div v-if="logsLoading && filteredLogs.length === 0" class="logs-status">加载中...</div>
-          <div v-else-if="filteredLogs.length === 0" class="logs-status">暂无日志</div>
-          <div v-else v-for="(entry, i) in filteredLogs" :key="i" class="log-entry">
-            <span class="log-ts">{{ entry.timestamp }}</span>
-            <span class="log-level" :class="'log-level-' + entry.level.toLowerCase()">{{ entry.level }}</span>
-            <span class="log-msg">{{ entry.message.trimStart() }}</span>
+          <div style="margin-left:auto; display:flex; gap:12px">
+            <el-button size="small" type="danger" @click="handleClearLogs">清除本地</el-button>
+            <el-button size="small" @click="handleClearDisplay">清除显示</el-button>
           </div>
         </div>
+        <div class="logs-list" ref="logsListRef" @scroll="onLogsScroll">
+          <div v-if="logsLoading && logEntries.length === 0" class="logs-status">加载中...</div>
+          <div v-else-if="filteredLogs.length === 0" class="logs-status">暂无日志</div>
+          <template v-else>
+            <div v-for="(entry, i) in filteredLogs" :key="i" class="log-entry">
+              <span class="log-ts">{{ entry.timestamp }}</span>
+              <span class="log-level" :class="'log-level-' + entry.level.toLowerCase()">{{ entry.level }}</span>
+              <span class="log-msg">{{ entry.message.trimStart() }}</span>
+            </div>
+          </template>
+        </div>
+        <transition name="fade">
+          <button
+            v-if="showLogs && !logsAtBottom && filteredLogs.length > 0"
+            class="scroll-bottom-btn"
+            @click="scrollToBottom"
+          >▼ 回到底部</button>
+        </transition>
       </div>
     </el-dialog>
 
@@ -157,7 +165,7 @@
 <script setup>
 import { ref, computed, watch, onMounted, onUnmounted, nextTick, provide } from 'vue'
 import { ElMessageBox } from 'element-plus'
-import { Setting, Iphone, Reading, Refresh, Delete } from '@element-plus/icons-vue'
+import { Setting, Iphone, Reading, Delete } from '@element-plus/icons-vue'
 import QRCode from 'qrcode'
 import { fetchRoots, addRoot, removeRoot, fetchLogs, clearLogs, fetchConfig, updateConfig } from './api'
 import api from './api'
@@ -332,7 +340,6 @@ const logEntries = ref([])
 const logsLoading = ref(false)
 const logFilter = ref('')
 const logLevelFilter = ref('')
-const logAutoRefresh = ref(true)
 const logsListRef = ref(null)
 const logsAtBottom = ref(true)
 let logTimer = null
@@ -352,19 +359,19 @@ const filteredLogs = computed(() => {
 
 function openLogs() {
   showLogs.value = true
+  logsAtBottom.value = true
   loadLogs()
   startAutoRefresh()
 }
 
 async function loadLogs() {
   logsLoading.value = true
+  const wasAtBottom = logsAtBottom.value
   try {
     const res = await fetchLogs(500)
     logEntries.value = res.data || []
     await nextTick()
-    if (logsAtBottom.value) {
-      scrollToBottom()
-    }
+    if (wasAtBottom) scrollToBottom()
   } catch (e) {
     console.error('[日志] 加载失败:', e)
   } finally {
@@ -388,12 +395,23 @@ function scrollToBottom() {
 
 function startAutoRefresh() {
   if (logTimer) clearInterval(logTimer)
-  if (logAutoRefresh.value) {
-    logTimer = setInterval(loadLogs, 3000)
-  }
+  logTimer = setInterval(loadLogs, 3000)
+}
+
+function handleClearDisplay() {
+  logEntries.value = []
 }
 
 async function handleClearLogs() {
+  try {
+    await ElMessageBox.confirm('确定清空所有日志？', '确认', {
+      confirmButtonText: '清空',
+      cancelButtonText: '取消',
+      type: 'warning'
+    })
+  } catch {
+    return
+  }
   try {
     await clearLogs()
     logEntries.value = []
@@ -407,19 +425,6 @@ function onLogsClose() {
   }
 }
 
-// 自动刷新开关变化时启停定时器
-watch(logAutoRefresh, (val) => {
-  if (showLogs.value) {
-    if (val) {
-      startAutoRefresh()
-    } else {
-      if (logTimer) {
-        clearInterval(logTimer)
-        logTimer = null
-      }
-    }
-  }
-})
 </script>
 
 <style>
@@ -508,12 +513,15 @@ html, body, #app {
 .header-right {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 18px;
+}
+.header-right > * {
+  margin: 0 !important;
 }
 .header-right .el-tag {
-  margin: 0 !important;
   padding: 0 4px;
 }
+
 
 /* 弹窗 body 去掉多余的左内边距 */
 .settings-body, .logs-body {
@@ -732,21 +740,20 @@ html, body, #app {
   flex-direction: column;
   gap: 8px;
   height: 60vh;
+  position: relative;
 }
 
 .logs-toolbar {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 12px;
+  font-size: 12px;
   flex-shrink: 0;
 }
-
-.log-auto-label {
-  font-size: 13px;
-  color: #606266;
-  display: flex;
-  align-items: center;
-  gap: 4px;
+.logs-toolbar .el-button,
+.logs-toolbar .el-input__inner {
+  font-size: 12px !important;
+  margin: 0 !important;
 }
 
 .logs-list {
@@ -758,6 +765,19 @@ html, body, #app {
   font-family: 'Cascadia Code', 'Fira Code', 'Consolas', monospace;
   font-size: 12px;
   line-height: 1.15;
+}
+.logs-list::-webkit-scrollbar {
+  width: 6px;
+}
+.logs-list::-webkit-scrollbar-track {
+  background: transparent;
+}
+.logs-list::-webkit-scrollbar-thumb {
+  background: rgba(255,255,255,0.15);
+  border-radius: 3px;
+}
+.logs-list::-webkit-scrollbar-thumb:hover {
+  background: rgba(255,255,255,0.25);
 }
 
 .log-entry {
@@ -796,8 +816,11 @@ html, body, #app {
 
 .log-level-filters {
   display: flex;
-  gap: 4px;
+  gap: 12px;
   flex-shrink: 0;
+}
+.log-level-filters .el-button {
+  margin: 0 !important;
 }
 
 .logs-status {
@@ -818,5 +841,34 @@ html, body, #app {
 .log-level-error {
   color: #f87171;
   background: rgba(248,113,113,0.12);
+}
+
+/* 回到底部按钮 */
+.scroll-bottom-btn {
+  position: absolute;
+  bottom: 12px;
+  right: 12px;
+  z-index: 10;
+  padding: 6px 14px;
+  border: none;
+  border-radius: 20px;
+  background: rgba(64, 158, 255, 0.9);
+  color: #fff;
+  font-size: 12px;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+.scroll-bottom-btn:hover {
+  background: #409eff;
+}
+
+/* 淡入淡出过渡 */
+.fade-enter-active,
+.fade-leave-active {
+  transition: opacity 0.25s;
+}
+.fade-enter-from,
+.fade-leave-to {
+  opacity: 0;
 }
 </style>
