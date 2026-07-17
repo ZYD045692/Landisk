@@ -650,6 +650,7 @@ html, body, #app {
   color: #d1d5db;
   flex: 1;
   min-width: 0;
+  overflow-wrap: break-word;
 }
 
 .log-level-filters {
