@@ -22,7 +22,7 @@
     <!-- 上传区域 -->
     <UploadZone
       :upload-path="currentPath"
-      @uploaded="loadDirectory"
+      @uploaded="onUploaded"
     />
 
     <!-- 文件列表 -->
@@ -33,7 +33,7 @@
       :current-path="currentPath"
       @open-dir="openDirectory"
       @retry="loadDirectory"
-      @deleted="loadDirectory"
+      @deleted="refreshDirectory"
     />
   </div>
 </template>
@@ -87,6 +87,18 @@ watch(() => route.query.path, (newPath) => {
   loadDirectory()
 })
 
+// 上传完成后：静默拉取新列表，并把上传的文件排到最前
+function onUploaded(newNames) {
+  refreshDirectory().then(() => {
+    if (newNames && newNames.length > 0) {
+      const top = new Set(newNames)
+      const fresh = entries.value.filter(e => top.has(e.name))
+      const rest = entries.value.filter(e => !top.has(e.name))
+      entries.value = [...fresh, ...rest]
+    }
+  })
+}
+
 function onRootChange() {
   currentPath.value = '/'
   router.push({ query: { path: '/' } })
@@ -109,6 +121,21 @@ async function loadDirectory() {
     error.value = msg
   } finally {
     loading.value = false
+  }
+}
+
+// 上传/删除后静默刷新：不清列表、不闪骨架
+async function refreshDirectory() {
+  error.value = ''
+
+  try {
+    const rootIdx = roots.value.length > 1 ? activeRoot.value : undefined
+    const res = await fetchFiles(currentPath.value, rootIdx)
+    if (res.data.isDirectory) {
+      entries.value = res.data.entries
+    }
+  } catch {
+    // 静默失败，保留旧列表
   }
 }
 

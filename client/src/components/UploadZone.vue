@@ -163,7 +163,9 @@ async function uploadFiles(fileList) {
     if (skipList.length > 0) msg += `，取消 ${skipList.length} 个`
     uploadResult.value = msg
     uploadError.value = false
-    emit('uploaded')
+    // 传出新文件名列表，供 FileBrowser 排到最前
+    const newNames = (data.files || []).map(f => f.name).filter(Boolean)
+    emit('uploaded', newNames)
   } catch (err) {
     uploadResult.value = err.message
     uploadError.value = true
