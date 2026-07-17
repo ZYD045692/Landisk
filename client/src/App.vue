@@ -163,7 +163,7 @@
 </template>
 
 <script setup>
-import { ref, computed, watch, onMounted, onUnmounted, nextTick, provide } from 'vue'
+import { ref, computed, onMounted, onUnmounted, nextTick, provide } from 'vue'
 import { ElMessageBox } from 'element-plus'
 import { Setting, Iphone, Reading, Delete } from '@element-plus/icons-vue'
 import QRCode from 'qrcode'
@@ -559,6 +559,15 @@ html, body, #app {
 .setting-label {
   font-size: 13px;
   color: #606266;
+}
+
+.settings-footer {
+  padding-top: 8px;
+  border-top: 1px solid #ebeef5;
+}
+.log-path-hint {
+  font-size: 12px;
+  color: #909399;
 }
 
 .setting-actions {
