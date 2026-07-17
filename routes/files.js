@@ -2,6 +2,7 @@ const express = require('express');
 const fs = require('fs/promises');
 const path = require('path');
 const { resolveSafePath } = require('../middleware/pathSafety');
+const logger = require('../utils/logger');
 
 function createFilesRouter(config) {
   const router = express.Router();
@@ -81,7 +82,7 @@ function createFilesRouter(config) {
       if (err.code === 'EACCES' || err.code === 'EPERM') {
         return res.status(403).json({ error: 'Permission denied' });
       }
-      console.error('Error reading directory:', err);
+      logger.error('读取目录失败:', resolved.absolutePath, err.message);
       res.status(500).json({ error: 'Internal server error' });
     }
   });

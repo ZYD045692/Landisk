@@ -64,4 +64,12 @@ export function checkConflicts(targetPath, names) {
   return api.post('/upload/check', { targetPath, names })
 }
 
+/**
+ * 获取服务端日志
+ * @param {number} lines - 返回行数
+ */
+export function fetchLogs(lines = 200) {
+  return api.get('/logs', { params: { lines } })
+}
+
 export default api

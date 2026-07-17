@@ -2,6 +2,7 @@ const express = require('express');
 const fs = require('fs/promises');
 const { execFile } = require('child_process');
 const { resolveSafePath } = require('../middleware/pathSafety');
+const logger = require('../utils/logger');
 
 function moveToTrash(absPath, isDir) {
   return new Promise((resolve, reject) => {
@@ -47,8 +48,15 @@ function createDeleteRouter(config) {
         return res.json({ message: '已永久删除（回收站不可用）' });
       }
     } catch (err) {
-      if (err.code === 'ENOENT') return res.status(404).json({ error: 'Not found' });
-      if (err.code === 'EACCES' || err.code === 'EPERM') return res.status(403).json({ error: 'Permission denied' });
+      if (err.code === 'ENOENT') {
+        logger.warn('删除失败-文件不存在:', resolved.absolutePath);
+        return res.status(404).json({ error: 'Not found' });
+      }
+      if (err.code === 'EACCES' || err.code === 'EPERM') {
+        logger.warn('删除失败-权限不足:', resolved.absolutePath);
+        return res.status(403).json({ error: 'Permission denied' });
+      }
+      logger.error('删除失败:', resolved.absolutePath, err.message);
       res.status(500).json({ error: 'Delete failed' });
     }
   });

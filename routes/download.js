@@ -4,6 +4,7 @@ const { createReadStream } = require('fs');
 const path = require('path');
 const { pipeline } = require('stream/promises');
 const { resolveSafePath } = require('../middleware/pathSafety');
+const logger = require('../utils/logger');
 
 // MIME 类型映射
 const MIME_TYPES = {
@@ -81,7 +82,7 @@ function createDownloadRouter(config) {
       if (err.code === 'EACCES') return res.status(403).json({ error: 'Permission denied' });
       // pipeline 错误：如果响应头已发送（下载中断），不覆盖已发出的响应
       if (!res.headersSent) {
-        console.error('Download error:', err);
+        logger.error('下载失败:', resolved.absolutePath, err.message);
         res.status(500).json({ error: 'Error reading file' });
       }
     }

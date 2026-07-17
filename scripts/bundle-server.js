@@ -37,7 +37,7 @@ if (fs.existsSync(clientDist)) {
 }
 
 // 复制目录
-const sourceDirs = ['middleware', 'routes'];
+const sourceDirs = ['middleware', 'routes', 'utils'];
 for (const dir of sourceDirs) {
   copyDir(path.join(ROOT, dir), path.join(OUT, dir));
 }

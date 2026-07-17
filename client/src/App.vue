@@ -16,6 +16,7 @@
         </el-tag>
         <el-button circle :icon="Iphone" size="small" @click="showQR = true" />
         <el-button circle :icon="Setting" size="small" @click="showSettings = true" />
+        <el-button circle :icon="Reading" size="small" @click="showLogs = true" />
       </div>
 
       <!-- 手机连接 Dialog -->
@@ -64,6 +65,35 @@
       </div>
     </el-dialog>
 
+    <!-- 日志查看 Dialog -->
+    <el-dialog v-model="showLogs" title="服务器日志" width="700px" top="3vh" destroy-on-close>
+      <div class="logs-body">
+        <div class="logs-toolbar">
+          <el-input v-model="logFilter" placeholder="过滤日志..." clearable size="small" style="width:200px" />
+          <el-button size="small" :icon="Refresh" @click="loadLogs" :loading="logsLoading">刷新</el-button>
+          <span class="log-auto-label">
+            <el-switch v-model="logAutoRefresh" size="small" /> 自动刷新
+          </span>
+        </div>
+        <div class="logs-list" ref="logsListRef">
+          <div v-if="logsLoading && logEntries.length === 0" class="logs-loading">
+            <el-skeleton :rows="8" animated />
+          </div>
+          <div
+            v-for="(entry, i) in filteredLogs"
+            :key="i"
+            class="log-entry"
+            :class="'log-level-' + entry.level.toLowerCase()"
+          >
+            <span class="log-ts">{{ entry.timestamp }}</span>
+            <span class="log-level" :class="'level-' + entry.level.toLowerCase()">{{ entry.level }}</span>
+            <span class="log-msg">{{ entry.message }}</span>
+          </div>
+          <div v-if="filteredLogs.length === 0 && !logsLoading" class="logs-empty">暂无日志</div>
+        </div>
+      </div>
+    </el-dialog>
+
     <!-- 全局拖拽提示 -->
     <div v-if="globalDragover" class="global-drop-overlay">
       <div class="drop-icons">
@@ -103,10 +133,10 @@
 </template>
 
 <script setup>
-import { ref, onMounted, onUnmounted, provide } from 'vue'
-import { Setting, Iphone } from '@element-plus/icons-vue'
+import { ref, computed, watch, onMounted, onUnmounted, provide } from 'vue'
+import { Setting, Iphone, Reading } from '@element-plus/icons-vue'
 import QRCode from 'qrcode'
-import { fetchRoots, addRoot, removeRoot } from './api'
+import { fetchRoots, addRoot, removeRoot, fetchLogs } from './api'
 import api from './api'
 import xIcon from './assets/letter-x.svg'
 import picIcon from './assets/picture.svg'
@@ -120,6 +150,14 @@ const settingsError = ref('')
 const serverUrl = ref('')
 const qrDataUrl = ref('')
 const copied = ref(false)
+
+// 日志查看
+const showLogs = ref(false)
+const logEntries = ref([])
+const logsLoading = ref(false)
+const logFilter = ref('')
+const logAutoRefresh = ref(true)
+let logTimer = null
 
 async function loadRoots() {
   try {
@@ -219,6 +257,54 @@ async function handleRemoveRoot(targetPath) {
     settingsError.value = err.response?.data?.error || '移除失败'
   }
 }
+
+// ============ 日志查看 ============
+
+async function loadLogs() {
+  logsLoading.value = true
+  try {
+    const res = await fetchLogs(200)
+    logEntries.value = res.data || []
+  } catch {
+    // 静默失败
+  } finally {
+    logsLoading.value = false
+  }
+}
+
+watch(showLogs, (val) => {
+  if (val) {
+    loadLogs()
+    if (logAutoRefresh.value && !logTimer) {
+      logTimer = setInterval(loadLogs, 5000)
+    }
+  } else {
+    if (logTimer) {
+      clearInterval(logTimer)
+      logTimer = null
+    }
+  }
+})
+
+watch(logAutoRefresh, (val) => {
+  if (showLogs.value) {
+    if (val && !logTimer) {
+      logTimer = setInterval(loadLogs, 5000)
+    } else if (!val && logTimer) {
+      clearInterval(logTimer)
+      logTimer = null
+    }
+  }
+})
+
+const filteredLogs = computed(() => {
+  const q = logFilter.value.trim().toLowerCase()
+  if (!q) return logEntries.value
+  return logEntries.value.filter(e =>
+    (e.message && e.message.toLowerCase().includes(q)) ||
+    (e.level && e.level.toLowerCase().includes(q))
+  )
+})
 </script>
 
 <style>
@@ -466,5 +552,94 @@ html, body, #app {
   font-size: 20px;
   color: #222;
   margin: 0;
+}
+
+/* 日志查看器 */
+.logs-body {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  height: 60vh;
+}
+
+.logs-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.log-auto-label {
+  font-size: 13px;
+  color: #606266;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.logs-list {
+  flex: 1;
+  overflow-y: auto;
+  background: #1a1a2e;
+  border-radius: 6px;
+  padding: 8px 0;
+  font-family: 'Cascadia Code', 'Fira Code', 'Consolas', monospace;
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.log-entry {
+  display: flex;
+  gap: 8px;
+  padding: 1px 12px;
+  white-space: nowrap;
+}
+
+.log-entry:hover {
+  background: rgba(255,255,255,0.05);
+}
+
+.log-ts {
+  color: #6b7280;
+  flex-shrink: 0;
+}
+
+.log-level {
+  flex-shrink: 0;
+  width: 44px;
+  text-align: center;
+  border-radius: 2px;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.level-info {
+  color: #60a5fa;
+}
+
+.level-warn {
+  color: #f59e0b;
+  background: rgba(245,158,11,0.15);
+}
+
+.level-error {
+  color: #ef4444;
+  background: rgba(239,68,68,0.15);
+}
+
+.log-msg {
+  color: #d1d5db;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.logs-loading {
+  padding: 12px;
+}
+
+.logs-empty {
+  color: #6b7280;
+  text-align: center;
+  padding: 24px;
 }
 </style>
