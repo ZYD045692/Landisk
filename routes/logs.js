@@ -26,6 +26,15 @@ function createLogsRouter(logger) {
     }
   });
 
+  /**
+   * DELETE /api/logs — 清空日志缓冲区
+   */
+  router.delete('/', (req, res) => {
+    logger.clearBuffer();
+    logger.info('[日志] 已清空');
+    res.json({ success: true });
+  });
+
   return router;
 }
 

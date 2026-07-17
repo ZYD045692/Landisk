@@ -72,6 +72,10 @@ export function fetchLogs(lines = 200) {
   return api.get('/logs', { params: { lines } })
 }
 
+export function clearLogs() {
+  return api.delete('/logs')
+}
+
 /**
  * 获取配置
  */

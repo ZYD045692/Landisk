@@ -134,6 +134,11 @@ function getBuffer(lines = 200, options = {}) {
   return result.slice(-lines);
 }
 
+/** 清空内存环形缓冲区 */
+function clearBuffer() {
+  ringBuffer.length = 0;
+}
+
 module.exports = {
   init,
   info: write('INFO', process.stdout),
@@ -141,5 +146,6 @@ module.exports = {
   error: write('ERROR', process.stderr),
   getLogPath: () => _logFilePath,
   getLogDir: () => _logDir,
-  getBuffer
+  getBuffer,
+  clearBuffer
 };

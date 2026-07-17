@@ -99,6 +99,7 @@
           </div>
           <el-input v-model="logFilter" placeholder="过滤日志..." clearable size="small" style="width:180px" />
           <el-button size="small" :icon="Refresh" @click="loadLogs" :loading="logsLoading" />
+          <el-button size="small" @click="handleClearLogs">清除</el-button>
           <span class="log-auto-label">
             <el-switch v-model="logAutoRefresh" size="small" /> 自动刷新
           </span>
@@ -155,9 +156,10 @@
 
 <script setup>
 import { ref, computed, watch, onMounted, onUnmounted, nextTick, provide } from 'vue'
-import { Setting, Iphone, Reading, Refresh } from '@element-plus/icons-vue'
+import { ElMessageBox } from 'element-plus'
+import { Setting, Iphone, Reading, Refresh, Delete } from '@element-plus/icons-vue'
 import QRCode from 'qrcode'
-import { fetchRoots, addRoot, removeRoot, fetchLogs, fetchConfig, updateConfig } from './api'
+import { fetchRoots, addRoot, removeRoot, fetchLogs, clearLogs, fetchConfig, updateConfig } from './api'
 import api from './api'
 import xIcon from './assets/letter-x.svg'
 import picIcon from './assets/picture.svg'
@@ -269,6 +271,15 @@ async function handleAddRoot() {
 }
 
 async function handleRemoveRoot(targetPath) {
+  try {
+    await ElMessageBox.confirm(`确定移除共享目录「${targetPath}」？`, '确认', {
+      confirmButtonText: '移除',
+      cancelButtonText: '取消',
+      type: 'warning'
+    })
+  } catch {
+    return  // 取消则不执行
+  }
   settingsError.value = ''
   try {
     const res = await removeRoot(targetPath)
@@ -380,6 +391,13 @@ function startAutoRefresh() {
   if (logAutoRefresh.value) {
     logTimer = setInterval(loadLogs, 3000)
   }
+}
+
+async function handleClearLogs() {
+  try {
+    await clearLogs()
+    logEntries.value = []
+  } catch {}
 }
 
 function onLogsClose() {
