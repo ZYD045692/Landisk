@@ -34,10 +34,9 @@
       </div>
     </div>
 
-    <!-- 加载中 -->
-    <div v-if="loading || deleting || batchDeleting" class="loading-state">
-      <el-skeleton v-if="loading" :rows="5" animated />
-      <el-progress v-if="batchDeleting" :percentage="deleteProgress" :stroke-width="8" />
+    <!-- 加载中（仅初次加载/切换目录时显示） -->
+    <div v-if="loading" class="loading-state">
+      <el-skeleton :rows="5" animated />
     </div>
 
     <!-- 错误 -->
@@ -61,6 +60,10 @@
 
     <!-- 文件列表 -->
     <template v-else>
+      <!-- 批量删除进度条（不隐藏表格） -->
+      <div v-if="batchDeleting" style="padding:8px 12px;border-bottom:1px solid #ebeef5">
+        <el-progress :percentage="deleteProgress" :stroke-width="6" :show-text="true" />
+      </div>
       <!-- PC 端表格 -->
       <div class="pc-table">
         <el-table
@@ -269,7 +272,6 @@ watch([searchQuery, () => props.entries], () => {
 
 // 多选
 const selected = ref([])
-const deleting = ref(false)
 const deleteProgress = ref(0)
 const batchDeleting = ref(false)
 
@@ -327,13 +329,11 @@ async function confirmDelete(row) {
       '确认删除',
       { confirmButtonText: '删除', cancelButtonText: '取消', type: 'warning', confirmButtonClass: 'el-button--danger' }
     )
-    deleting.value = true
     const filePath = (props.currentPath === '/' ? '' : props.currentPath) + '/' + row.name
     await deleteFile(filePath)
     ElMessage.success('已移入回收站')
     emit('deleted')
   } catch { /* cancelled */ }
-  finally { deleting.value = false }
 }
 
 function handleRowClick(row) {
