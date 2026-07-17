@@ -24,7 +24,7 @@
         <div class="qr-body">
           <img v-if="qrDataUrl" :src="qrDataUrl" class="qr-image" alt="QR Code" />
           <el-skeleton v-else :rows="1" animated style="width:200px;height:200px;margin:0 auto" />
-          <div class="qr-url">{{ serverUrl }}</div>
+          <a :href="serverUrl" target="_blank" rel="noopener noreferrer" class="qr-url">{{ serverUrl }}</a>
           <el-button size="small" @click="copyUrl" :type="copied ? 'success' : 'default'">
             {{ copied ? '已复制 ✓' : '复制链接' }}
           </el-button>
@@ -499,6 +499,10 @@ html, body, #app {
   color: #409eff;
   word-break: break-all;
   text-align: center;
+  cursor: pointer;
+}
+.qr-url:hover {
+  text-decoration: underline;
 }
 
 .qr-hint {
