@@ -272,7 +272,6 @@ function startServer(portOverride) {
       qrcode.toString(url, { type: 'utf8' }, (err, qr) => {
         if (!err) logger.info(`📱 手机扫码访问:\n${qr}`);
       });
-      logger.info(`📱 手机扫码访问: ${url}`);
     } catch {
       logger.info(`📱 手机浏览器打开: ${url}`);
     }

@@ -617,7 +617,7 @@ html, body, #app {
   padding: 8px 0;
   font-family: 'Cascadia Code', 'Fira Code', 'Consolas', monospace;
   font-size: 12px;
-  line-height: 1.8;
+  line-height: 1.15;
 }
 
 .log-entry {
