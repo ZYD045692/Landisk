@@ -251,22 +251,22 @@ function startServer(portOverride) {
     const localIP = getLocalIP();
     const url = `http://${localIP}:${port}`;
 
-    logger.info('');
-    logger.info('══════════════════════════════════════════');
-    logger.info('  📁  LanDisk 服务已启动');
-    logger.info('══════════════════════════════════════════');
+    process.stdout.write('\n');
+    process.stdout.write('══════════════════════════════════════════\n');
+    process.stdout.write('  📁  LanDisk 服务已启动\n');
+    process.stdout.write('══════════════════════════════════════════\n');
     logger.info(`  🌐 本机访问: http://localhost:${port}`);
     logger.info(`  📱 内网访问: ${url}`);
     logger.info(`  📂 共享目录: ${config.roots.join(', ')}`);
-    logger.info('══════════════════════════════════════════');
-    logger.info('');
+    process.stdout.write('══════════════════════════════════════════\n');
+    process.stdout.write('\n');
 
-    // 生成终端二维码
+    // 生成终端二维码（用 console.log 绕过 logger，不进入环形缓冲区）
     try {
       const qrcode = require('qrcode');
       qrcode.toString(url, { type: 'terminal', small: true }, (err, qr) => {
         if (!err) {
-        logger.info(qr);
+        process.stdout.write(qr + '\n');
         logger.info(`📱 手机扫码访问: ${url}`);
       }
     });
