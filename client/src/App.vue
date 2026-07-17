@@ -624,7 +624,6 @@ html, body, #app {
   display: flex;
   gap: 8px;
   padding: 1px 12px;
-  white-space: nowrap;
 }
 
 .log-entry:hover {
@@ -647,8 +646,8 @@ html, body, #app {
 
 .log-msg {
   color: #d1d5db;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  word-break: break-all;
+  white-space: pre-wrap;
 }
 
 .log-level-filters {
