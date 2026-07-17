@@ -16,7 +16,7 @@
         </el-tag>
         <el-button circle :icon="Iphone" size="small" @click="showQR = true" />
         <el-button circle :icon="Setting" size="small" @click="showSettings = true" />
-        <el-button circle :icon="Reading" size="small" @click="showLogs = true" />
+        <el-button circle :icon="Reading" size="small" @click="openLogs" />
       </div>
 
       <!-- 手机连接 Dialog -->
@@ -65,7 +65,7 @@
       </div>
     </el-dialog>
 
-    <!-- 日志查看 Dialog -->
+    <!-- LOGBOOK_DIALOG_START 日志查看 Dialog -->
     <el-dialog v-model="showLogs" title="服务器日志" width="700px" top="3vh" destroy-on-close>
       <div class="logs-body">
         <div class="logs-toolbar">
@@ -75,21 +75,11 @@
             <el-switch v-model="logAutoRefresh" size="small" /> 自动刷新
           </span>
         </div>
-        <div class="logs-list" ref="logsListRef">
-          <div v-if="logsLoading && logEntries.length === 0" class="logs-loading">
-            <el-skeleton :rows="8" animated />
+        <div class="logs-list logs-XXX-MARKER">
+          {{ logEntries.length }} entries
+          <div v-for="(entry, i) in logEntries.slice(0, 20)" :key="i">
+            {{ entry.timestamp }} [{{ entry.level }}] {{ entry.message }}
           </div>
-          <div
-            v-for="(entry, i) in filteredLogs"
-            :key="i"
-            class="log-entry"
-            :class="'log-level-' + entry.level.toLowerCase()"
-          >
-            <span class="log-ts">{{ entry.timestamp }}</span>
-            <span class="log-level" :class="'level-' + entry.level.toLowerCase()">{{ entry.level }}</span>
-            <span class="log-msg">{{ entry.message }}</span>
-          </div>
-          <div v-if="filteredLogs.length === 0 && !logsLoading" class="logs-empty">暂无日志</div>
         </div>
       </div>
     </el-dialog>
@@ -133,7 +123,7 @@
 </template>
 
 <script setup>
-import { ref, computed, watch, onMounted, onUnmounted, provide } from 'vue'
+import { ref, watch, onMounted, onUnmounted, provide } from 'vue'
 import { Setting, Iphone, Reading } from '@element-plus/icons-vue'
 import QRCode from 'qrcode'
 import { fetchRoots, addRoot, removeRoot, fetchLogs } from './api'
@@ -260,50 +250,30 @@ async function handleRemoveRoot(targetPath) {
 
 // ============ 日志查看 ============
 
+function openLogs() {
+  showLogs.value = true
+  loadLogs()
+}
+
 async function loadLogs() {
   logsLoading.value = true
   try {
     const res = await fetchLogs(200)
     logEntries.value = res.data || []
-  } catch {
-    // 静默失败
+  } catch (e) {
+    console.error('[日志] 加载失败:', e)
   } finally {
     logsLoading.value = false
   }
 }
 
 watch(showLogs, (val) => {
-  if (val) {
-    loadLogs()
-    if (logAutoRefresh.value && !logTimer) {
-      logTimer = setInterval(loadLogs, 5000)
-    }
-  } else {
-    if (logTimer) {
-      clearInterval(logTimer)
-      logTimer = null
-    }
+  if (val && logAutoRefresh.value && !logTimer) {
+    logTimer = setInterval(loadLogs, 5000)
+  } else if (!val && logTimer) {
+    clearInterval(logTimer)
+    logTimer = null
   }
-})
-
-watch(logAutoRefresh, (val) => {
-  if (showLogs.value) {
-    if (val && !logTimer) {
-      logTimer = setInterval(loadLogs, 5000)
-    } else if (!val && logTimer) {
-      clearInterval(logTimer)
-      logTimer = null
-    }
-  }
-})
-
-const filteredLogs = computed(() => {
-  const q = logFilter.value.trim().toLowerCase()
-  if (!q) return logEntries.value
-  return logEntries.value.filter(e =>
-    (e.message && e.message.toLowerCase().includes(q)) ||
-    (e.level && e.level.toLowerCase().includes(q))
-  )
 })
 </script>
 
@@ -611,20 +581,6 @@ html, body, #app {
   border-radius: 2px;
   font-size: 11px;
   font-weight: 600;
-}
-
-.level-info {
-  color: #60a5fa;
-}
-
-.level-warn {
-  color: #f59e0b;
-  background: rgba(245,158,11,0.15);
-}
-
-.level-error {
-  color: #ef4444;
-  background: rgba(239,68,68,0.15);
 }
 
 .log-msg {

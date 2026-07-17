@@ -3,6 +3,7 @@ const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
 const { resolveSafePath } = require('../middleware/pathSafety');
+const logger = require('../utils/logger');
 
 // 修复中文文件名：multer 将 UTF-8 字节误读为 latin1
 function fixEncoding(raw) {
@@ -121,6 +122,7 @@ function createUploadRouter(config) {
       if (uploaded > 0) parts.push(`新增 ${uploaded} 个`);
       if (replaced > 0) parts.push(`替换 ${replaced} 个`);
       if (blocked > 0) parts.push(`${blocked} 个文件类型不安全已跳过`);
+      logger.info(`上传完成: ${parts.join('，')} - ${files.map(f => f.name).join(', ')}`);
 
       res.json({ message: parts.join('，'), files });
     });

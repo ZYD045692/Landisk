@@ -37,9 +37,11 @@ function createDeleteRouter(config) {
       const stat = await fs.stat(resolved.absolutePath);
       try {
         await moveToTrash(resolved.absolutePath, stat.isDirectory());
+        logger.info(`删除成功(回收站): ${resolved.absolutePath}`);
         return res.json({ message: '已移入回收站' });
       } catch {
         // 回收站失败则永久删除
+        logger.warn(`回收站不可用，已永久删除: ${resolved.absolutePath}`);
         if (stat.isDirectory()) {
           await fs.rm(resolved.absolutePath, { recursive: true });
         } else {

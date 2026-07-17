@@ -212,7 +212,13 @@ function findClientDist() {
 const clientDist = findClientDist();
 if (clientDist) {
   logger.info(`[静态] 前端目录: ${clientDist}`);
-  app.use(express.static(clientDist));
+  app.use(express.static(clientDist, { etag: false, lastModified: false }));
+  app.use((req, res, next) => {
+    if (req.path.endsWith('.html') || req.path.endsWith('.js') || req.path.endsWith('.css')) {
+      res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+    }
+    next();
+  });
 } else {
   logger.warn('[静态] 未找到前端目录，仅提供 API 服务');
 }
@@ -237,27 +243,28 @@ app.use((err, req, res, next) => {
 });
 
 // ============ 启动服务 ============
-const port = config.port;
 
-app.listen(port, '0.0.0.0', () => {
-  const localIP = getLocalIP();
-  const url = `http://${localIP}:${port}`;
+function startServer(portOverride) {
+  const port = portOverride || config.port;
+  app.listen(port, '0.0.0.0', () => {
+    const localIP = getLocalIP();
+    const url = `http://${localIP}:${port}`;
 
-  logger.info('');
-  logger.info('══════════════════════════════════════════');
-  logger.info('  📁  LanDisk 服务已启动');
-  logger.info('══════════════════════════════════════════');
-  logger.info(`  🌐 本机访问: http://localhost:${port}`);
-  logger.info(`  📱 内网访问: ${url}`);
-  logger.info(`  📂 共享目录: ${config.roots.join(', ')}`);
-  logger.info('══════════════════════════════════════════');
-  logger.info('');
+    logger.info('');
+    logger.info('══════════════════════════════════════════');
+    logger.info('  📁  LanDisk 服务已启动');
+    logger.info('══════════════════════════════════════════');
+    logger.info(`  🌐 本机访问: http://localhost:${port}`);
+    logger.info(`  📱 内网访问: ${url}`);
+    logger.info(`  📂 共享目录: ${config.roots.join(', ')}`);
+    logger.info('══════════════════════════════════════════');
+    logger.info('');
 
-  // 生成终端二维码
-  try {
-    const qrcode = require('qrcode');
-    qrcode.toString(url, { type: 'terminal', small: true }, (err, qr) => {
-      if (!err) {
+    // 生成终端二维码
+    try {
+      const qrcode = require('qrcode');
+      qrcode.toString(url, { type: 'terminal', small: true }, (err, qr) => {
+        if (!err) {
         logger.info(qr);
         logger.info(`📱 手机扫码访问: ${url}`);
       }
@@ -266,3 +273,10 @@ app.listen(port, '0.0.0.0', () => {
     logger.info(`📱 手机浏览器打开: ${url}`);
   }
 });
+}
+
+if (require.main === module) {
+  startServer();
+} else {
+  module.exports = { app, config, logger, startServer };
+}

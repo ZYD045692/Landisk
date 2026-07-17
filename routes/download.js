@@ -76,6 +76,7 @@ function createDownloadRouter(config) {
       res.setHeader('Content-Type', contentType);
       res.setHeader('Content-Length', stat.size);
 
+      logger.info(`下载文件: ${resolved.absolutePath} (${stat.size} bytes)`);
       await pipeline(createReadStream(resolved.absolutePath), res);
     } catch (err) {
       if (err.code === 'ENOENT') return res.status(404).json({ error: 'File not found' });
