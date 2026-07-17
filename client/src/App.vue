@@ -512,6 +512,7 @@ html, body, #app {
 }
 .header-right .el-tag {
   margin: 0;
+  padding: 0 4px;
 }
 
 .settings-body {
