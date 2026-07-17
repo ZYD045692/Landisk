@@ -624,7 +624,7 @@ html, body, #app {
   display: flex;
   gap: 8px;
   padding: 1px 12px;
-  white-space: nowrap;
+  white-space: pre;
 }
 
 .log-entry:hover {
