@@ -6,11 +6,8 @@ const logger = require('./utils/logger');
 
 // ============ 加载配置 ============
 
-// 安装目录可能只读（Program Files），用户数据存 %APPDATA%
-const userDataDir = path.join(
-  process.env.APPDATA || path.join(os.homedir(), 'AppData', 'Roaming'),
-  'LanDisk'
-);
+// 用户数据目录：%USERPROFILE%\.landisk\
+const userDataDir = process.env.LANDISK_DATA_DIR || path.join(os.homedir(), '.landisk');
 const defaultConfigPath = path.join(__dirname, 'config.json');
 const userConfigPath = path.join(userDataDir, 'config.json');
 

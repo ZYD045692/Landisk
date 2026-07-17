@@ -80,18 +80,16 @@ describe('日志系统测试', () => {
     fs.writeFileSync(TEST_FILE, 'Hello, this is a test log file.', 'utf-8');
 
     // 设置环境变量，让服务器使用测试配置目录
-    process.env.APPDATA = TEST_DIR;
+    process.env.LANDISK_DATA_DIR = TEST_DIR;
 
-    // 服务器读取 %APPDATA%/LanDisk/config.json，提前创建好
-    const testCfgDir = path.join(TEST_DIR, 'LanDisk');
-    fs.mkdirSync(testCfgDir, { recursive: true });
+    // 服务器读取 LANDISK_DATA_DIR/config.json，提前创建好
     const testConfig = {
       roots: [TEST_DIR],
       port: PORT,
       maxFileSizeMB: 10,
       showHiddenFiles: false
     };
-    fs.writeFileSync(path.join(testCfgDir, 'config.json'), JSON.stringify(testConfig, null, 2), 'utf-8');
+    fs.writeFileSync(path.join(TEST_DIR, 'config.json'), JSON.stringify(testConfig, null, 2), 'utf-8');
     // 清理可能残留的日志目录
     const logsDir = path.join(TEST_DIR, 'logs');
     if (fs.existsSync(logsDir)) {
