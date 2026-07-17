@@ -88,7 +88,11 @@ app.use('/api/logs', createLogsRouter(logger));
 
 function getLocalIP() {
   const interfaces = os.networkInterfaces();
+  // 跳过虚拟网卡（VMware、代理 TUN 等），优先返回真实 LAN 口
+  const skipNames = ['vmware', 'virtualbox', 'virtual', 'meta', 'tun', 'tap', 'docker', 'hyper-v'];
   for (const name of Object.keys(interfaces)) {
+    const lower = name.toLowerCase();
+    if (skipNames.some(s => lower.includes(s))) continue;
     for (const iface of interfaces[name]) {
       if (iface.family === 'IPv4' && !iface.internal) {
         return iface.address;
