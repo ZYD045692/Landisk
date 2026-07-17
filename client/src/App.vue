@@ -511,7 +511,7 @@ html, body, #app {
   gap: 6px;
 }
 .header-right .el-tag {
-  margin: 0;
+  margin: 0 !important;
   padding: 0 4px;
 }
 
