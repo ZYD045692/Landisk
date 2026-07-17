@@ -268,11 +268,6 @@ function startServer(portOverride) {
     // 生成二维码
     try {
       const qrcode = require('qrcode');
-      // 终端 ANSI 二维码（process.stdout 绕过 logger）
-      qrcode.toString(url, { type: 'terminal', small: true }, (err, qr) => {
-        if (!err) process.stdout.write(qr + '\n');
-      });
-      // 干净 UTF-8 文本二维码 → 日志环形缓冲区
       qrcode.toString(url, { type: 'utf8' }, (err, qr) => {
         if (!err) logger.info(`📱 手机扫码访问:\n${qr}`);
       });
