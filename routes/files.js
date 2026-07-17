@@ -44,27 +44,24 @@ function createFilesRouter(config) {
       }
 
       const dirents = await fs.readdir(resolved.absolutePath, { withFileTypes: true });
-      const entries = [];
 
-      for (const dirent of dirents) {
-        if (!config.showHiddenFiles && dirent.name.startsWith('.')) {
-          continue;
-        }
-        try {
+      // 过滤隐藏文件 + 并行 stat（取代串行逐条查询）
+      const visible = dirents.filter(d => config.showHiddenFiles || !d.name.startsWith('.'));
+      const results = await Promise.allSettled(
+        visible.map(async (dirent) => {
           const fullPath = path.join(resolved.absolutePath, dirent.name);
           const entryStat = await fs.stat(fullPath);
-          entries.push({
+          return {
             name: dirent.name,
             size: entryStat.size,
             modified: entryStat.mtime.toISOString(),
             isDirectory: dirent.isDirectory(),
             extension: dirent.isDirectory() ? null : path.extname(dirent.name).toLowerCase()
-          });
-        } catch {
-          // 跳过无法 stat 的文件（权限不足、损坏的符号链接等）
-          continue;
-        }
-      }
+          };
+        })
+      );
+      // 仅保留成功的 stat（跳过权限不足、损坏的符号链接等）
+      const entries = results.filter(r => r.status === 'fulfilled').map(r => r.value);
 
       // 排序：目录优先 → 名称字母序（兼容中文）
       entries.sort((a, b) => {

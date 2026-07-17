@@ -1,6 +1,8 @@
 const express = require('express');
-const fs = require('fs');
+const fs = require('fs/promises');
+const { createReadStream } = require('fs');
 const path = require('path');
+const { pipeline } = require('stream/promises');
 const { resolveSafePath } = require('../middleware/pathSafety');
 
 // MIME 类型映射
@@ -44,7 +46,7 @@ const MIME_TYPES = {
 function createDownloadRouter(config) {
   const router = express.Router();
 
-  router.get('/', (req, res) => {
+  router.get('/', async (req, res) => {
     const userPath = req.query.path;
     if (!userPath) {
       return res.status(400).json({ error: 'Missing path parameter' });
@@ -58,12 +60,8 @@ function createDownloadRouter(config) {
       return res.status(403).json({ error: resolved.error });
     }
 
-    fs.stat(resolved.absolutePath, (err, stat) => {
-      if (err) {
-        if (err.code === 'ENOENT') return res.status(404).json({ error: 'File not found' });
-        if (err.code === 'EACCES') return res.status(403).json({ error: 'Permission denied' });
-        return res.status(500).json({ error: 'Internal server error' });
-      }
+    try {
+      const stat = await fs.stat(resolved.absolutePath);
 
       if (stat.isDirectory()) {
         return res.status(400).json({ error: 'Cannot download a directory' });
@@ -77,15 +75,16 @@ function createDownloadRouter(config) {
       res.setHeader('Content-Type', contentType);
       res.setHeader('Content-Length', stat.size);
 
-      const readStream = fs.createReadStream(resolved.absolutePath);
-      readStream.on('error', (streamErr) => {
-        console.error('Stream error:', streamErr);
-        if (!res.headersSent) {
-          res.status(500).json({ error: 'Error reading file' });
-        }
-      });
-      readStream.pipe(res);
-    });
+      await pipeline(createReadStream(resolved.absolutePath), res);
+    } catch (err) {
+      if (err.code === 'ENOENT') return res.status(404).json({ error: 'File not found' });
+      if (err.code === 'EACCES') return res.status(403).json({ error: 'Permission denied' });
+      // pipeline 错误：如果响应头已发送（下载中断），不覆盖已发出的响应
+      if (!res.headersSent) {
+        console.error('Download error:', err);
+        res.status(500).json({ error: 'Error reading file' });
+      }
+    }
   });
 
   return router;

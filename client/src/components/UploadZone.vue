@@ -33,8 +33,8 @@
         </div>
       </div>
       <template #footer>
-        <el-button @click="cancelConflict">取消</el-button>
-        <el-button type="primary" @click="doUpload">确认上传</el-button>
+        <el-button @click="onConflictCancel">取消</el-button>
+        <el-button type="primary" @click="onConflictConfirm">确认上传</el-button>
       </template>
     </el-dialog>
 
@@ -52,7 +52,7 @@
 </template>
 
 <script setup>
-import { ref, inject, watch } from 'vue'
+import { ref, inject, watch, onUnmounted } from 'vue'
 import { Plus } from '@element-plus/icons-vue'
 import { checkConflicts } from '../api'
 
@@ -67,12 +67,17 @@ const progress = ref(0)
 const progressText = ref('')
 const uploadResult = ref('')
 const uploadError = ref(false)
+let resultTimer = null
 
 // 冲突弹窗
 const showConflict = ref(false)
 const conflictList = ref([])
 const conflictChoices = ref({})
-let pendingFiles = null
+let _conflictResolve = null  // Promise resolve，await 用户确认
+
+onUnmounted(() => {
+  if (resultTimer) clearTimeout(resultTimer)
+})
 
 // 全局拖拽监听
 const droppedFiles = inject('droppedFiles', ref(null))
@@ -91,15 +96,15 @@ function triggerFileInput() {
   input.click()
 }
 
+// 单次上传的完整流程：冲突检查 → 弹窗确认 → XHR 上传
 async function uploadFiles(fileList) {
   // 过滤掉文件夹和空文件
-  const files = Array.from(fileList).filter(f => f.size > 0 && f.type !== '')
+  let files = Array.from(fileList).filter(f => f.size > 0 && f.type !== '')
   if (files.length === 0) {
-    uploadResult.value = '不支持上传文件夹，请选择文件'
-    uploadError.value = true
-    setTimeout(() => { uploadResult.value = '' }, 3000)
+    showTemporaryMsg('不支持上传文件夹，请选择文件', true)
     return
   }
+
   const names = files.map(f => f.name)
   uploading.value = true
   progress.value = 0
@@ -107,65 +112,70 @@ async function uploadFiles(fileList) {
   uploadResult.value = ''
   uploadError.value = false
 
-  // 检查冲突
   try {
-    const res = await checkConflicts(props.uploadPath, names)
-    const conflicts = res.data.conflicts || []
-    if (conflicts.length > 0) {
-      conflictList.value = conflicts
-      conflictChoices.value = {}
-      for (const n of conflicts) conflictChoices.value[n] = 'replace'
-      pendingFiles = files
-      uploading.value = false
-      showConflict.value = true
-      return
+    // === Phase 1: 冲突检查 ===
+    let replaceList = []
+    let skipList = []
+    try {
+      const res = await checkConflicts(props.uploadPath, names)
+      const conflicts = res.data.conflicts || []
+      if (conflicts.length > 0) {
+        uploading.value = false  // 显示弹窗前关闭进度条
+        const choices = await showConflictDialog(conflicts)
+        if (!choices) return  // 用户取消
+
+        replaceList = Object.entries(choices)
+          .filter(([, v]) => v === 'replace')
+          .map(([k]) => k)
+        skipList = Object.entries(choices)
+          .filter(([, v]) => v === 'skip')
+          .map(([k]) => k)
+        uploading.value = true
+
+        // 过滤掉取消的文件
+        if (skipList.length > 0) {
+          files = files.filter(f => !skipList.includes(f.name))
+          if (files.length === 0) { uploading.value = false; return }
+        }
+      }
+    } catch {
+      // check 失败，直接上传
     }
-  } catch {
-    // check 失败，直接上传
+
+    // === Phase 2: 上传 ===
+    const formData = new FormData()
+    formData.append('targetPath', props.uploadPath)
+    // replace 必须在 files 之前，multer 按顺序解析
+    formData.append('replace', replaceList.join(','))
+    let count = 0
+    for (const file of files) {
+      formData.append('files', file)
+      count++
+    }
+    if (count === 0) { uploading.value = false; return }
+
+    progress.value = 0
+    progressText.value = `准备上传 ${count} 个文件...`
+
+    const data = await xhrUpload(formData)
+
+    let msg = data.message || '上传完成'
+    if (skipList.length > 0) msg += `，取消 ${skipList.length} 个`
+    uploadResult.value = msg
+    uploadError.value = false
+    emit('uploaded')
+  } catch (err) {
+    uploadResult.value = err.message
+    uploadError.value = true
+  } finally {
+    uploading.value = false
+    resultTimer = setTimeout(() => { uploadResult.value = '' }, 3000)
   }
-
-  doUploadDirect(files)
 }
 
-function cancelConflict() {
-  showConflict.value = false
-  pendingFiles = null
-  conflictChoices.value = {}
-}
-
-async function doUpload() {
-  showConflict.value = false
-  doUploadDirect(pendingFiles)
-  pendingFiles = null
-  conflictChoices.value = {}
-}
-
-async function doUploadDirect(fileList) {
-  const formData = new FormData()
-  formData.append('targetPath', props.uploadPath)
-  // replace 必须在 files 之前，multer 按顺序解析
-  const replaceList = Object.entries(conflictChoices.value)
-    .filter(([, v]) => v === 'replace')
-    .map(([k]) => k)
-  formData.append('replace', replaceList.join(','))
-  const skipList = Object.entries(conflictChoices.value)
-    .filter(([, v]) => v === 'skip')
-    .map(([k]) => k)
-  let count = 0
-  for (const file of fileList) {
-    if (skipList.includes(file.name)) continue
-    formData.append('files', file)
-    count++
-  }
-  if (count === 0) { uploading.value = false; return }
-
-  uploading.value = true
-  progress.value = 0
-  progressText.value = `准备上传 ${count} 个文件...`
-  uploadResult.value = ''
-  uploadError.value = false
-
-  try {
+// XHR 上传（返回 Promise，用 XMLHttpRequest 以支持进度事件）
+function xhrUpload(formData) {
+  return new Promise((resolve, reject) => {
     const xhr = new XMLHttpRequest()
     xhr.open('POST', '/api/upload')
 
@@ -176,36 +186,55 @@ async function doUploadDirect(fileList) {
       }
     })
 
-    await new Promise((resolve, reject) => {
-      xhr.addEventListener('load', () => {
-        if (xhr.status >= 200 && xhr.status < 300) {
-          resolve(JSON.parse(xhr.responseText))
-        } else {
-          try {
-            reject(new Error(JSON.parse(xhr.responseText).error || '上传失败'))
-          } catch {
-            reject(new Error('上传失败'))
-          }
+    xhr.addEventListener('load', () => {
+      if (xhr.status >= 200 && xhr.status < 300) {
+        resolve(JSON.parse(xhr.responseText))
+      } else {
+        try {
+          reject(new Error(JSON.parse(xhr.responseText).error || '上传失败'))
+        } catch {
+          reject(new Error('上传失败'))
         }
-      })
-      xhr.addEventListener('error', () => reject(new Error('网络错误')))
-      xhr.send(formData)
+      }
     })
 
-    const data = JSON.parse(xhr.responseText)
-    const skipped = skipList.length
-    let msg = data.message || '上传完成'
-    if (skipped > 0) msg += `，取消 ${skipped} 个`
-    uploadResult.value = msg
-    uploadError.value = false
-    emit('uploaded')
-  } catch (err) {
-    uploadResult.value = err.message
-    uploadError.value = true
-  } finally {
-    uploading.value = false
-    setTimeout(() => { uploadResult.value = '' }, 3000)
+    xhr.addEventListener('error', () => reject(new Error('网络错误')))
+    xhr.send(formData)
+  })
+}
+
+// 冲突弹窗：返回 Promise，用户确认后 resolve(choices)，取消则 resolve(null)
+function showConflictDialog(conflicts) {
+  return new Promise(resolve => {
+    conflictList.value = conflicts
+    conflictChoices.value = {}
+    for (const n of conflicts) conflictChoices.value[n] = 'replace'
+    showConflict.value = true
+    _conflictResolve = resolve
+  })
+}
+
+function onConflictConfirm() {
+  showConflict.value = false
+  if (_conflictResolve) {
+    _conflictResolve({ ...conflictChoices.value })
+    _conflictResolve = null
   }
+}
+
+function onConflictCancel() {
+  showConflict.value = false
+  conflictChoices.value = {}
+  if (_conflictResolve) {
+    _conflictResolve(null)
+    _conflictResolve = null
+  }
+}
+
+function showTemporaryMsg(msg, isError) {
+  uploadResult.value = msg
+  uploadError.value = isError
+  resultTimer = setTimeout(() => { uploadResult.value = '' }, 3000)
 }
 </script>
 

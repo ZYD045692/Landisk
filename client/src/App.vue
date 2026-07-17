@@ -103,7 +103,7 @@
 </template>
 
 <script setup>
-import { ref, onMounted, provide } from 'vue'
+import { ref, onMounted, onUnmounted, provide } from 'vue'
 import { Setting, Iphone } from '@element-plus/icons-vue'
 import QRCode from 'qrcode'
 import { fetchRoots, addRoot, removeRoot } from './api'
@@ -163,14 +163,17 @@ async function tryConnect(retries = 5) {
 }
 
 onMounted(() => {
-  loadRoots()
-  tryConnect()
+  tryConnect()  // 连接成功后会回调 loadRoots()，无需重复调用
   // 窗口级 dragleave：拖出窗口时清除提示（dragover 会停止触发）
   window.addEventListener('dragleave', (e) => {
     if (e.clientX <= 0 || e.clientY <= 0) {
       globalDragover.value = false
     }
   })
+})
+
+onUnmounted(() => {
+  if (retryTimer) clearTimeout(retryTimer)
 })
 provide('roots', roots)
 

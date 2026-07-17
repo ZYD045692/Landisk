@@ -5,10 +5,11 @@ const { resolveSafePath } = require('../middleware/pathSafety');
 
 function moveToTrash(absPath, isDir) {
   return new Promise((resolve, reject) => {
-    const safe = absPath.replace(/'/g, "''");
     const method = isDir ? 'DeleteDirectory' : 'DeleteFile';
-    const ps = `Add-Type -AssemblyName Microsoft.VisualBasic;[Microsoft.VisualBasic.FileIO.FileSystem]::${method}('${safe}','OnlyErrorDialogs','SendToRecycleBin')`;
-    execFile('powershell', ['-Command', ps], { timeout: 10000 }, (err) => {
+    // 用 -EncodedCommand 传 Base64（UTF16LE），避免路径特殊字符注入
+    const script = `Add-Type -AssemblyName Microsoft.VisualBasic;[Microsoft.VisualBasic.FileIO.FileSystem]::${method}('${absPath}','OnlyErrorDialogs','SendToRecycleBin')`;
+    const encoded = Buffer.from(script, 'utf16le').toString('base64');
+    execFile('powershell', ['-EncodedCommand', encoded], { timeout: 10000 }, (err) => {
       err ? reject(err) : resolve();
     });
   });

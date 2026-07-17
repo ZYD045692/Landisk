@@ -6,102 +6,126 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ```bash
 # 后端
-npm start              # 启动生产服务（需先构建前端）
-npm run dev            # 启动后端，文件变更自动重启
+npm run server          # 启动生产 Express (:22580)
+npm run dev             # 后端开发，node --watch 自动重启
+npm start               # npx tauri dev（Tauri 桌面开发模式）
 
 # 前端开发
-cd client && npm run dev    # Vite dev server (5173)，/api → localhost:3000
-cd client && npm run build  # 构建到 client/dist/，Express 直接托管
+cd client && npm run dev       # Vite dev server (:5173)，/api → localhost:22580
+cd client && npm run build     # 构建到 client/dist/，Express 托管
 
-# 首次或新增依赖后
+# 全新检出或新增依赖后
 npm install && cd client && npm install
+
+# 构建安装包
+npm run build:server           # 构建前端 + 打包后端到 server-dist/
+npx tauri build                # 生成 NSIS 安装包 (.exe)
 ```
 
-## 架构概览
+## 项目概览
 
-**单 Express 进程同时提供 API 和静态前端文件。** 生产模式下 `client/dist/` 由 Express 托管；开发模式下 Vite dev server 独立运行并通过 proxy 转发 `/api`。
+**LanDisk** — 局域网文件快传桌面应用。Tauri 2 壳承载一个 Express 服务，同一进程提供 REST API 和 Vue 3 + Element Plus 前端页面。手机和 PC 在同一 WiFi 下访问同一服务，扫码即连。
 
-**路由工厂模式：** 每个路由文件导出 `createXxxRouter(config)` 函数，由 `server.js` 注入全局 `config` 对象。不要直接在路由中 `require` 配置文件。
+| 层 | 技术 |
+|---|---|
+| 桌面壳 | Tauri 2 (Rust) — 窗口/托盘/子进程管理 |
+| 前端 | Vue 3 + Vite + Element Plus |
+| 后端 | Express (Node.js) |
+| 打包 | NSIS |
 
-**路径安全门：** `middleware/pathSafety.js` 的 `resolveSafePath(userPath, roots)` 是所有 API 端点处理用户路径的唯一入口。工作方式：
-1. 空路径 or `/` → `'.'`
+### Tauri 架构
+
+`src-tauri/src/lib.rs` 管理窗口、系统托盘、单实例锁、开机自启。Express 作为 sidecar 由 Tauri 管理生命周期 — `npm start` = `npx tauri dev`。构建产物：`src-tauri/target/release/bundle/nsis/LanDisk_*_x64-setup.exe`。
+
+### 配置持久化
+
+配置存 `%APPDATA%/LanDisk/config.json`（安装目录可能只读，Program Files 不可写）。首次运行从仓库 `config.json` 复制到用户目录。字段：`roots[]`, `port`, `maxFileSizeMB`, `showHiddenFiles`。
+
+## 架构模式
+
+### 路由工厂模式
+
+每个路由文件导出 `createXxxRouter(config)` 函数，由 `server.js` 注入全局 `config` 对象。**不要在路由中直接 `require` 配置文件。**
+
+```js
+// routes/files.js
+function createFilesRouter(config) {
+  const router = express.Router();
+  router.get('/', async (req, res) => { ... });
+  return router;
+}
+module.exports = { createFilesRouter };
+```
+
+### 路径安全门
+
+`middleware/pathSafety.js` 的 `resolveSafePath(userPath, roots)` 是所有 API 端点处理用户路径的唯一入口。工作方式：
+1. 空路径或 `/` → `'.'`
 2. 剥离开头的 `../`、`..\`
 3. `path.resolve(root, normalized)` 得到绝对路径
 4. 校验绝对路径以 `root + path.sep` 开头（防 `D:/Shared` 匹配 `D:/SharedSecret`）
 
-添加新 API 时，任何接受用户路径的参数都必须经此函数校验。
+**添加新 API 时，任何接受用户路径的参数都必须经此函数校验。**
 
-**前端路由：** 单页应用，当前浏览路径存储在 URL query `?path=/subfolder` 中。`FileBrowser.vue` 通过 `vue-router` 的 `useRoute().query.path` 读写，目录导航通过 `router.push({ query: { path } })` 实现，不刷新页面。
+### 前端路由
 
-**上传去重：** `routes/upload.js` 中同名文件自动加序号 `(1)` `(2)`，不会覆盖已有文件。上传前 `fileFilter` 阻断可执行扩展名列表（`.exe` `.bat` `.cmd` `.ps1` `.sh` `.msi` `.dll` `.sys` `.vbs` `.scr`）。
+SPA，浏览路径存储在 URL query `?path=/subfolder` 中。`FileBrowser.vue` 通过 `vue-router` 的 `useRoute().query.path` 读写，目录导航通过 `router.push({ query: { path } })` 实现，不刷新页面。
 
-**移动端适配：** `FileTable.vue` 使用 CSS `@media (max-width: 768px)` 切换显示 — PC 端 `<el-table>`，移动端卡片列表。`UploadZone.vue` 使用 `XMLHttpRequest`（非 `fetch`）以支持上传进度事件。
-- 三个图标精准位置层级关系描述
-## 一、前后层级（遮挡关系）
-1. **中间图表图标：最顶层（最高Z轴）**
-    完整压在另外两个图标的下半部分，是视觉中心主体，不会被任何图标遮挡。
-2. **左侧表格图标、右侧文档图标：同一底层（低Z轴）**
-    二者层级平齐，互不遮挡，都只露出上半段，下半段被中间图标盖住。
+### 全局状态注入
 
-## 二、平面左右、上下偏移
-1. 左侧表格图标
-    - 水平：整体在中间图标的左后方；
-    - 垂直：整体向上偏移一小段，中心点比中间图标更高；
-    - 错位：向右下倾斜叠在主图标左后方，仅露出左上大半块。
-2. 右侧文档图标
-    - 水平：整体在中间图标的右后方；
-    - 垂直：和左侧表格图标高度一致，同样向上偏移；
-    - 错位：向左下倾斜叠在主图标右后方，仅露出右上大半块。
-3. 中间图表图标
-    - 水平：画面正中间；
-    - 垂直：三个图标里位置最低，是整套图标的视觉基准中心。
+`App.vue` 通过 `provide()` 注入 roots（根目录列表）和 droppedFiles（全局拖拽文件）。子组件通过 `inject()` 消费。
 
-## 三、整体排布形态
-三者形成对称三角错落结构：
-左右两个浅色图标**等高、靠上、分置两侧后方**；深蓝色图表图标**居中、靠下、压在前方**，组合成聚拢、递进的堆叠效果，视觉重心完全落在中间图表图标上。
-- 三个图标精准位置层级关系描述
-## 一、前后层级（遮挡关系）
-1. **中间图表图标：最顶层（最高Z轴）**
-    完整压在另外两个图标的下半部分，是视觉中心主体，不会被任何图标遮挡。
-2. **左侧表格图标、右侧文档图标：同一底层（低Z轴）**
-    二者层级平齐，互不遮挡，都只露出上半段，下半段被中间图标盖住。
+## API 端点
 
-## 二、平面左右、上下偏移
-1. 左侧表格图标
-    - 水平：整体在中间图标的左后方；
-    - 垂直：整体向上偏移一小段，中心点比中间图标更高；
-    - 错位：向右下倾斜叠在主图标左后方，仅露出左上大半块。
-2. 右侧文档图标
-    - 水平：整体在中间图标的右后方；
-    - 垂直：和左侧表格图标高度一致，同样向上偏移；
-    - 错位：向左下倾斜叠在主图标右后方，仅露出右上大半块。
-3. 中间图表图标
-    - 水平：画面正中间；
-    - 垂直：三个图标里位置最低，是整套图标的视觉基准中心。
+| 端点 | 方法 | 说明 |
+|---|---|---|
+| `/api/files` | GET | 目录列表，`?path=` + `?root=`(索引) |
+| `/api/upload` | POST | 上传文件（multer） |
+| `/api/upload/check` | POST | 冲突检测（返回已存在的文件名） |
+| `/api/download` | GET | 文件下载，`?path=` |
+| `/api/delete` | DELETE | 删除到回收站，`?path=` |
+| `/api/roots` | GET/POST/DELETE | 根目录增删查 |
+| `/api/server-info` | GET | 返回本机 IP、端口、URL（二维码用） |
 
-## 三、整体排布形态
-三者形成对称三角错落结构：
-左右两个浅色图标**等高、靠上、分置两侧后方**；深蓝色图表图标**居中、靠下、压在前方**，组合成聚拢、递进的堆叠效果，视觉重心完全落在中间图表图标上。
-- 三个图标精准位置层级关系描述
-## 一、前后层级（遮挡关系）
-1. **中间图表图标：最顶层（最高Z轴）**
-    完整压在另外两个图标的下半部分，是视觉中心主体，不会被任何图标遮挡。
-2. **左侧表格图标、右侧文档图标：同一底层（低Z轴）**
-    二者层级平齐，互不遮挡，都只露出上半段，下半段被中间图标盖住。
+## 上传流程
 
-## 二、平面左右、上下偏移
-1. 左侧表格图标
-    - 水平：整体在中间图标的左后方；
-    - 垂直：整体向上偏移一小段，中心点比中间图标更高；
-    - 错位：向右下倾斜叠在主图标左后方，仅露出左上大半块。
-2. 右侧文档图标
-    - 水平：整体在中间图标的右后方；
-    - 垂直：和左侧表格图标高度一致，同样向上偏移；
-    - 错位：向左下倾斜叠在主图标右后方，仅露出右上大半块。
-3. 中间图表图标
-    - 水平：画面正中间；
-    - 垂直：三个图标里位置最低，是整套图标的视觉基准中心。
+1. 前端检查冲突 → `POST /api/upload/check` → 返回已存在的文件名列表
+2. 有冲突 → 弹窗让用户逐项选择「替换/保留两份/取消」
+3. 使用 `XMLHttpRequest`（非 `fetch`）以获得上传进度事件
+4. 后端 `multer.diskStorage` 中处理去重：同名文件自动加 `(1)` `(2)` 序号
+5. 可执行扩展名阻断（`.exe .bat .cmd .ps1 .sh .msi .dll .sys .vbs .scr`）：先写入再立即删除，避免 multer 中途抛错卡死
+6. 中文文件名通过 `Buffer.from(raw, 'latin1').toString('utf8')` 修复编码
 
-## 三、整体排布形态
-三者形成对称三角错落结构：
-左右两个浅色图标**等高、靠上、分置两侧后方**；深蓝色图表图标**居中、靠下、压在前方**，组合成聚拢、递进的堆叠效果，视觉重心完全落在中间图表图标上。
+## 删除流程
+
+- 优先调用 PowerShell COM 方法移入回收站（`Microsoft.VisualBasic.FileIO.FileSystem`）
+- 回收站不可用时 fallback 到 `fs.rm` / `fs.unlink` 永久删除
+- 批量删除使用 `Promise.allSettled` + 逐项进度百分比
+
+## 前端结构
+
+```
+client/src/
+├── api/index.js            # Axios 封装，所有 API 函数集中于此
+├── components/
+│   ├── FileTable.vue       # 文件列表 — PC 端 el-table / 移动端卡片，含搜索/排序/分页/批量删除
+│   ├── UploadZone.vue      # 上传区域 + 冲突弹窗 + 进度条 + 全局拖拽监听
+│   └── BreadcrumbNav.vue   # 面包屑导航
+├── views/
+│   └── FileBrowser.vue     # 主视图，组合 BreadcrumbNav + UploadZone + FileTable
+├── utils/
+│   └── format.js           # getFileIcon(70+种图标，颜色分类)、formatFileSize、formatDate
+├── router/index.js         # 单路由 /
+├── App.vue                 # 根组件：Header/Footer、设置弹窗、二维码、全局拖拽遮罩
+└── main.js                 # 入口：注册 Element Plus + 全部图标
+```
+
+## 全局拖拽覆盖层
+
+`App.vue` 中监听 `@dragover`/`@drop`，显示毛玻璃全屏提示（`backdrop-filter: blur(8px)`）。三图标对称三角布局：
+
+- **左侧表格图标**：靠上左后方，旋转 -16deg，底层 Z
+- **右侧文档图标**：靠上右后方，旋转 16deg，底层 Z
+- **中间图表图标**：居中靠下压在前方，最顶层 Z (z-index: 3)
+
+`dragleave` 事件检测鼠标离开窗口边界时关闭覆盖层。

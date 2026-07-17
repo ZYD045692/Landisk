@@ -19,28 +19,30 @@ function createUploadRouter(config) {
       if (!resolved.valid) {
         return cb(new Error('Access denied'), null);
       }
+      // 存到 req 上，给 filename 回调复用，避免重复 resolveSafePath
+      req._safePath = resolved.absolutePath;
       // 确保目标目录存在
-      fs.mkdirSync(resolved.absolutePath, { recursive: true });
-      cb(null, resolved.absolutePath);
+      fs.mkdirSync(req._safePath, { recursive: true });
+      cb(null, req._safePath);
     },
     filename: (req, file, cb) => {
       const originalName = fixEncoding(file.originalname);
-      const userPath = req.body.targetPath || '/';
-      const resolved = resolveSafePath(userPath, config.roots);
-      const destPath = resolved.valid ? resolved.absolutePath : '';
-      const replaceList = (req.body.replace || '').split(',').map(s => s.trim()).filter(Boolean);
 
+      // 只算一次 replaceList，后续的 filename 回调和 handler 复用
+      if (!req._replaceList) {
+        req._replaceList = (req.body.replace || '').split(',').map(s => s.trim()).filter(Boolean);
+      }
 
       let finalName = originalName;
-      if (destPath) {
-        const fullPath = path.join(destPath, finalName);
-        if (replaceList.includes(originalName) && fs.existsSync(fullPath)) {
+      if (req._safePath) {
+        const fullPath = path.join(req._safePath, finalName);
+        if (req._replaceList.includes(originalName) && fs.existsSync(fullPath)) {
           try { fs.unlinkSync(fullPath); } catch {}
         } else {
           let counter = 1;
           const ext = path.extname(originalName);
           const base = path.basename(originalName, ext);
-          while (fs.existsSync(path.join(destPath, finalName))) {
+          while (fs.existsSync(path.join(req._safePath, finalName))) {
             finalName = `${base} (${counter})${ext}`;
             counter++;
           }
@@ -89,7 +91,6 @@ function createUploadRouter(config) {
         return res.status(400).json({ error: '没有选择文件' });
       }
 
-      const replaceList = (req.body.replace || '').split(',').map(s => s.trim()).filter(Boolean);
       let replaced = 0, uploaded = 0, blocked = 0;
 
       // 删除被阻止的文件
@@ -107,7 +108,7 @@ function createUploadRouter(config) {
       const files = safeFiles.map(f => {
         const name = fixEncoding(f.filename);
         const originalName = fixEncoding(f.originalname);
-        if (replaceList.includes(originalName)) {
+        if (req._replaceList.includes(originalName)) {
           replaced++;
           return { name, originalName, size: f.size, action: 'replaced' };
         }

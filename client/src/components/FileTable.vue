@@ -29,15 +29,15 @@
       </div>
       <div v-if="selected.length > 0" class="batch-bar">
         <span class="batch-count">已选 {{ selected.length }} 项</span>
-        <el-button size="small" type="danger" @click="batchDelete" :loading="deleting">批量删除</el-button>
+        <el-button size="small" type="danger" @click="batchDelete" :loading="batchDeleting">批量删除</el-button>
         <el-button size="small" @click="selected = []">取消选择</el-button>
       </div>
     </div>
 
     <!-- 加载中 -->
-    <div v-if="loading || deleting" class="loading-state">
+    <div v-if="loading || deleting || batchDeleting" class="loading-state">
       <el-skeleton v-if="loading" :rows="5" animated />
-      <el-progress v-if="deleting" :percentage="deleteProgress" :stroke-width="8" />
+      <el-progress v-if="batchDeleting" :percentage="deleteProgress" :stroke-width="8" />
     </div>
 
     <!-- 错误 -->
@@ -70,7 +70,6 @@
           row-class-name="file-row"
           @row-click="handleRowClick"
           @selection-change="onSelectionChange"
-          ref="tableRef"
         >
           <el-table-column type="selection" width="40" />
 
@@ -226,28 +225,25 @@ const filteredEntries = computed(() => {
     list = list.filter(e => e.name.toLowerCase().includes(q))
   }
   list.sort((a, b) => {
-    let va, vb
+    // 目录始终优先于文件
+    if (a.isDirectory !== b.isDirectory) return a.isDirectory ? -1 : 1
+
+    // 同类内按用户选择的字段排序
     if (sortBy.value === 'name') {
-      va = a.name.toLowerCase()
-      vb = b.name.toLowerCase()
-      return sortAsc.value ? va.localeCompare(vb) : vb.localeCompare(va)
-    } else if (sortBy.value === 'size') {
-      va = a.isDirectory ? -1 : a.size
-      vb = b.isDirectory ? -1 : b.size
-    } else if (sortBy.value === 'date') {
-      va = new Date(a.modified).getTime()
-      vb = new Date(b.modified).getTime()
-    } else {
-      va = (a.extension || '')
-      vb = (b.extension || '')
+      const va = a.name.toLowerCase(), vb = b.name.toLowerCase()
       return sortAsc.value ? va.localeCompare(vb) : vb.localeCompare(va)
     }
-    return sortAsc.value ? va - vb : vb - va
+    if (sortBy.value === 'size') {
+      return sortAsc.value ? a.size - b.size : b.size - a.size
+    }
+    if (sortBy.value === 'date') {
+      const va = new Date(a.modified).getTime(), vb = new Date(b.modified).getTime()
+      return sortAsc.value ? va - vb : vb - va
+    }
+    // 类型（扩展名）
+    const va = (a.extension || ''), vb = (b.extension || '')
+    return sortAsc.value ? va.localeCompare(vb) : vb.localeCompare(va)
   })
-  // 目录始终在最前（除非按名称排序）
-  if (sortBy.value !== 'name') {
-    list.sort((a, b) => (b.isDirectory ? 1 : 0) - (a.isDirectory ? 1 : 0))
-  }
   return list
 })
 
@@ -262,13 +258,14 @@ const pagedEntries = computed(() => {
 
 watch([searchQuery, () => props.entries], () => {
   currentPage.value = 1
+  selected.value = []
 })
 
 // 多选
 const selected = ref([])
 const deleting = ref(false)
 const deleteProgress = ref(0)
-const tableRef = ref(null)
+const batchDeleting = ref(false)
 
 function onSelectionChange(rows) {
   selected.value = rows
@@ -282,7 +279,7 @@ async function batchDelete() {
       '批量删除',
       { confirmButtonText: '删除', cancelButtonText: '取消', type: 'warning', confirmButtonClass: 'el-button--danger' }
     )
-    deleting.value = true
+    batchDeleting.value = true
     deleteProgress.value = 0
     let completed = 0
     const results = await Promise.allSettled(
@@ -296,10 +293,10 @@ async function batchDelete() {
     const success = results.filter(r => r.status === 'fulfilled').length
     selected.value = []
     deleteProgress.value = 0
-    deleting.value = false
+    batchDeleting.value = false
     ElMessage.success(`已删除 ${success} / ${count} 个项目`)
     emit('deleted')
-  } catch { deleting.value = false }
+  } catch { batchDeleting.value = false }
 }
 
 // 原有功能
