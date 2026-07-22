@@ -15,14 +15,14 @@
   },
   "dependencies": {
     "@tauri-apps/plugin-shell": "^2.3.5",
-    "archiver": "^8.0.0",
     "express": "^4.21.0",
-    "jpeg-js": "^0.4.4",
     "multer": "^1.4.5-lts.1",
-    "qrcode": "^1.5.4",
-    "to-ico": "^1.1.5"
+    "qrcode": "^1.5.4"
   },
   "devDependencies": {
-    "@tauri-apps/cli": "^2.11.4"
+    "@tauri-apps/cli": "^2.11.4",
+    "archiver": "^8.0.0",
+    "jpeg-js": "^0.4.4",
+    "to-ico": "^1.1.5"
   }
 }
