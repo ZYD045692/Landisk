@@ -258,3 +258,22 @@ client/src/
 | `desc` | 启动描述 | 9 |
 | `url` | 访问地址 | 9 |
 
+## 日志内存缓冲
+
+`utils/logger.js` 维护一个环形缓冲区（`ringBuffer[]`），上限 **200 条**。所有日志查询 API（`GET /api/logs`）直接从内存读取，零文件 I/O。
+
+**服务启动时**自动从 `landisk.log` 末尾解析最后 **100 条** JSON 条目补入缓冲池，避免重启后日志查看器空白。
+
+### SSE 实时推流
+
+日志写入环形缓冲区时通过 `EventEmitter` 触发 `'log'` 事件。日志 API 路由注册了 `GET /api/logs/stream` SSE 端点，前端通过 `EventSource` 监听实时推送新日志，无需轮询。
+
+```
+后端写日志 → ringBuffer.push() + logEmitter.emit('log')
+                                         │
+                                         ▼
+                    GET /api/logs/stream → EventSource.onmessage
+                                         │
+                                         ▼
+                    logEntries.push() + 粘性滚动
+```

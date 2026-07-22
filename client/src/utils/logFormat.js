@@ -81,6 +81,22 @@ export function parseLog(entry) {
     case 6:
       if (d.error) return { summary: { op: `[${tn}]`, text: `${d.file} — ${d.error}` } }
       return { summary: { op: `[${tn}]`, text: `${d.file}` } }
+    case 7:
+      if (d.op === 1) return { summary: { op: `[${tn}]`, text: `添加 ${d.dir}` } }
+      if (d.op === 2) return { summary: { op: `[${tn}]`, text: `移除 ${d.dir}` } }
+      return { summary: { op: `[${tn}]`, text: d.dir || '' } }
+    case 8:
+      return { summary: { op: `[${tn}]`, text: `${d.field}: ${d.value}` } }
+    case 9:
+      return { summary: { op: `[${tn}]`, text: d.desc } }
+    case 10:
+      if (d.error) return { summary: { op: `[${tn}]`, text: `${d.dir} — ${d.error}` } }
+      return { summary: { op: `[${tn}]`, text: d.dir } }
+    case 11:
+      if (d.op === 1) return { summary: { op: `[${tn}]`, text: '已清空' } }
+      return { summary: { op: `[${tn}]`, text: '' } }
+    case 12:
+      return { summary: { op: `[${tn}]`, text: d.error || '' } }
     default:
       return null
   }

@@ -4,7 +4,7 @@ const { EventEmitter } = require('events');
 
 const MAX_SIZE = 1 * 1024 * 1024; // 1 MB
 const LOG_FILE = 'landisk.log';
-const MAX_BUFFER = 100; // 内存环形缓冲区上限
+const MAX_BUFFER = 200; // 内存环形缓冲区上限
 
 let _logDir = null;
 let _logFilePath = null;
@@ -48,7 +48,7 @@ function init(dir) {
   }
 
   // 启动时从日志文件抓取最后 50 条，避免重启后日志查看器空白
-  loadFromFile(50);
+  loadFromFile(100);
 }
 
 function loadFromFile(count) {
@@ -180,6 +180,7 @@ function write(level, stream) {
         if (type !== null) {
           jsonObj.type = type;
           jsonObj.data = data;
+          jsonObj.msg = msg;
         } else {
           jsonObj.msg = msg;
         }

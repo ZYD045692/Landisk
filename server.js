@@ -21,6 +21,7 @@ if (!fs.existsSync(userConfigPath) && fs.existsSync(defaultConfigPath)) {
 
 // 初始化日志（用户目录就绪后）
 logger.init(userDataDir);
+logger.info(`[日志] 位置: ${logger.getLogPath()}`);
 
 // 加载配置（优先用户目录，因为可写）
 const configPath = fs.existsSync(userConfigPath) ? userConfigPath : defaultConfigPath;
@@ -252,7 +253,7 @@ function findClientDist() {
 
 const clientDist = findClientDist();
 if (clientDist) {
-  logger.info(`[静态] 前端目录: ${clientDist}`);
+  logger.info(`[静态] 前端目录: ${clientDist.replace(/^\\\\\?\\/, '')}`);
   // 禁止缓存 HTML/JS/CSS（浏览器经常缓存旧版导致看不到更新）
   app.use((req, res, next) => {
     if (req.path.endsWith('.html') || req.path.endsWith('.js') || req.path.endsWith('.css')) {
