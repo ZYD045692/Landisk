@@ -110,7 +110,15 @@
             <div v-for="(entry, i) in filteredLogs" :key="i" class="log-entry">
               <span class="log-ts">{{ entry.timestamp }}</span>
               <span class="log-level" :class="'log-level-' + entry.level.toLowerCase()">{{ entry.level }}</span>
-              <span class="log-msg">{{ entry.message.trimStart() }}</span>
+              <div class="log-msg">
+                <template v-if="showSummary(entry)">
+                  <div class="log-summary">{{ showSummary(entry) }}</div>
+                  <div v-for="(f, j) in showFiles(entry)" :key="j" class="log-file">{{ f }}</div>
+                </template>
+                <template v-else>
+                  {{ (entry.message || '').trimStart() }}
+                </template>
+              </div>
             </div>
           </template>
         </div>
@@ -344,6 +352,33 @@ const logsListRef = ref(null)
 const logsAtBottom = ref(true)
 let logTimer = null
 
+const TYPE_NAMES = { 1:'新增',2:'替换',3:'阻断',4:'删除',5:'下载',6:'打开',7:'根目录',8:'配置',9:'启动',10:'浏览',11:'日志',12:'服务' }
+
+/** 解析结构化日志为 { summary, files[] } 便于前端渲染 */
+function parseLog(e) {
+  if (!e.type || !e.data) return null
+  const tn = TYPE_NAMES[e.type] || e.type
+  const d = e.data || {}
+  switch (e.type) {
+    case 1: case 2:
+      return { summary: `[${tn}] ${d.count} 个 → ${d.dir}`, files: d.files ? d.files.map(f => `${f.name} (${f.size})`) : [] }
+    case 3:
+      return { summary: `[${tn}] ${d.count} 个`, files: d.files || [] }
+    case 4:
+      if (d.dest) return { summary: `[${tn}] ${d.file} → ${d.dest}` }
+      if (d.error) return { summary: `[${tn}] ${d.file} — ${d.error}` }
+      return { summary: `[${tn}] ${d.file}` }
+    case 5:
+      if (d.error) return { summary: `[${tn}] ${d.file} — ${d.error}` }
+      return { summary: `[${tn}] ${d.file} (${d.size})` }
+    case 6:
+      if (d.error) return { summary: `[${tn}] ${d.file} — ${d.error}` }
+      return { summary: `[${tn}] ${d.file}` }
+    default:
+      return null
+  }
+}
+
 // 客户端过滤：等级 + 文本
 const filteredLogs = computed(() => {
   let result = logEntries.value
@@ -352,10 +387,16 @@ const filteredLogs = computed(() => {
   }
   if (logFilter.value) {
     const s = logFilter.value.toLowerCase()
-    result = result.filter(e => e.message.toLowerCase().includes(s))
+    result = result.filter(e => {
+      const p = parseLog(e)
+      return p ? (p.summary + ' ' + (p.files||[]).join(' ')).toLowerCase().includes(s) : (e.message || '').toLowerCase().includes(s)
+    })
   }
   return result
 })
+
+function showSummary(e) { const p = parseLog(e); return p ? p.summary : null }
+function showFiles(e) { const p = parseLog(e); return p ? (p.files || []) : [] }
 
 function openLogs() {
   showLogs.value = true
@@ -820,7 +861,9 @@ html, body, #app {
   color: #d1d5db;
   flex: 1;
   min-width: 0;
-  overflow-wrap: break-word;
+  white-space: pre-wrap;
+  word-break: break-word;
+  line-height: 1.25;
 }
 
 .log-level-filters {
@@ -830,6 +873,14 @@ html, body, #app {
 }
 .log-level-filters .el-button {
   margin: 0 !important;
+}
+
+.log-file {
+  padding-left: 7ch;
+  line-height: 1.25;
+}
+.log-summary {
+  line-height: 1.25;
 }
 
 .logs-status {

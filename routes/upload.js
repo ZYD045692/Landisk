@@ -5,6 +5,12 @@ const fs = require('fs');
 const { resolveSafePath } = require('../middleware/pathSafety');
 const logger = require('../utils/logger');
 
+function formatSize(bytes) {
+  if (bytes >= 1024 * 1024) return (bytes / 1024 / 1024).toFixed(1) + ' MB';
+  if (bytes >= 1024) return (bytes / 1024).toFixed(1) + ' KB';
+  return bytes + ' B';
+}
+
 // 修复中文文件名：multer 将 UTF-8 字节误读为 latin1
 function fixEncoding(raw) {
   return Buffer.from(raw, 'latin1').toString('utf8');
@@ -118,18 +124,29 @@ function createUploadRouter(config) {
         return { name, originalName, size: f.size, action: name === originalName ? 'new' : 'kept' };
       });
 
+      const targetDir = req._safePath || '(未知)';
       const parts = [];
-      if (uploaded > 0 && replaced > 0) {
-        // 同时有新增和替换时分为两条日志
-        logger.info(`新增 ${uploaded} 个 - ${files.filter(f => f.action !== 'replaced').map(f => f.name).join(', ')}`);
-        logger.info(`替换 ${replaced} 个：${files.filter(f => f.action === 'replaced').map(f => f.name).join(', ')}`);
-      } else if (uploaded > 0) {
-        logger.info(`新增 ${uploaded} 个：${files.map(f => f.name).join(', ')}`);
-      } else if (replaced > 0) {
-        logger.info(`替换 ${replaced} 个：${files.map(f => f.name).join(', ')}`);
+      function fmtFile(f) { return { name: f.name, size: formatSize(f.size) }; }
+      if (uploaded > 0) {
+        const uploadFiles = files.filter(f => f.action !== 'replaced').map(fmtFile);
+        const lines = uploadFiles.map(f => `    ${f.name} (${f.size})`).join('\n');
+        logger.info({ message: `${uploaded} 个 → ${targetDir}：\n${lines}`, type: 1, data: { op: 1, dir: targetDir, count: uploaded, files: uploadFiles } });
+      }
+      if (replaced > 0) {
+        const repFiles = files.filter(f => f.action === 'replaced').map(fmtFile);
+        const lines = repFiles.map(f => `    ${f.name} (${f.size})`).join('\n');
+        logger.info({ message: `${replaced} 个 → ${targetDir}：\n${lines}`, type: 2, data: { op: 1, dir: targetDir, count: replaced, files: repFiles } });
       }
       if (blocked > 0) {
-        logger.info(`${blocked} 个文件类型不安全已跳过`);
+        const blockedNames = [];
+        for (const f of req.files) {
+          const ext = path.extname(f.filename).toLowerCase();
+          if (['.exe', '.bat', '.cmd', '.ps1', '.sh', '.msi', '.dll', '.sys', '.vbs', '.scr'].includes(ext)) {
+            blockedNames.push(f.filename);
+          }
+        }
+        const lines = blockedNames.map(n => `    ${n}`).join('\n');
+        logger.warn({ message: `${blocked} 个：\n${lines}`, type: 3, data: { op: 1, count: blocked, files: blockedNames } });
       }
       if (uploaded > 0) parts.push(`新增 ${uploaded} 个`);
       if (replaced > 0) parts.push(`替换 ${replaced} 个`);

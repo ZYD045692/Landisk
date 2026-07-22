@@ -5,8 +5,10 @@
   "windows": [
     "main"
   ],
+  "url": ["http://localhost:*", "http://127.0.0.1:*"],
   "permissions": [
     "core:default",
-    "autostart:default"
+    "autostart:default",
+    "shell:allow-open"
   ]
 }

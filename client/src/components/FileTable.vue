@@ -127,7 +127,7 @@
             :page-sizes="[5, 10, 20, 50]"
             :total="filteredEntries.length"
             layout="sizes, prev, pager, next, total"
-            small
+            size="small"
             @current-change="v => currentPage = v"
             @size-change="v => { pageSize = v; currentPage = 1 }"
           />
@@ -194,6 +194,22 @@ import { ElMessageBox, ElMessage } from 'element-plus'
 import { Delete, Download, ArrowRight, Search, Refresh } from '@element-plus/icons-vue'
 import { getFileIcon, formatFileSize, formatDate } from '../utils/format'
 import { getDownloadUrl, deleteFile } from '../api'
+
+async function openFileRow(path) {
+  try {
+    const res = await fetch('/api/files/open', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ path })
+    })
+    const data = await res.json()
+    if (!data.success) throw new Error(data.error || '未知错误')
+  } catch (e) {
+    try {
+      await fetch('/api/logs', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ level: 'error', message: `[打开] 失败: ${path} — ${e.message || e}` }) })
+    } catch {}
+  }
+}
 
 const props = defineProps({
   entries: { type: Array, default: () => [] },
@@ -353,11 +369,13 @@ function isLocalhost() {
 function handleRowClick(row) {
   if (row.isDirectory) {
     openDir(row.name)
-  } else if (isLocalhost() || window.__TAURI__) {
-    const fileUrl = 'file:///' + row.fullPath.replace(/\\/g, '/')
-    window.open(fileUrl, '_blank')
+  } else if (isLocalhost()) {
+    // 本机（Tauri/浏览器）：POST /api/files/open 调系统默认程序打开
+    openFileRow(row.fullPath)
+  } else {
+    // 其他设备：下载
+    downloadFile(row)
   }
-  // 其他设备：无操作
 }
 </script>
 

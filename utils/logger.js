@@ -81,28 +81,74 @@ function archive(dateStr) {
   }
 }
 
-function formatEntry(level, args) {
-  const ts = formatTimestamp();
-  const msg = args.map(a => (typeof a === 'object' ? JSON.stringify(a) : String(a))).join(' ');
-  return { ts, msg, text: `[${ts}] [${level}] ${msg}` };
-}
+const TYPE_NAMES = {
+  1: '新增', 2: '替换', 3: '阻断', 4: '删除', 5: '下载',
+  6: '打开', 7: '根目录', 8: '配置', 9: '启动', 10: '浏览',
+  11: '日志', 12: '服务'
+};
 
 function write(level, stream) {
   return (...args) => {
-    const { ts, msg, text } = formatEntry(level, args);
+    const ts = formatTimestamp();
+    let type = null, data = null, msg = '';
 
-    // 内存环形缓冲区（供 API 即时读取）
-    ringBuffer.push({ timestamp: ts, level, message: msg });
+    // 结构化日志：logger.info({ message, type, data })
+    if (args.length === 1 && typeof args[0] === 'object' && args[0] !== null && 'type' in args[0]) {
+      const entry = args[0];
+      msg = entry.message || '';
+      type = entry.type;
+      data = entry.data || {};
+    } else {
+      // 传统字符串日志（向后兼容）
+      msg = args.map(a => (typeof a === 'object' ? JSON.stringify(a) : String(a))).join(' ');
+    }
+
+    // 控制台文字格式（带详细内容）
+    const typeName = type ? (TYPE_NAMES[type] || type) : '';
+    let detail = '';
+    if (type === 1 || type === 2) {
+      if (data.files) detail = '\n' + data.files.map(f => `       ${f.name} (${f.size})`).join('\n');
+    } else if (type === 3) {
+      if (data.files) detail = '\n' + data.files.map(f => `       ${f}`).join('\n');
+    } else if (type === 4) {
+      if (data.dest) detail = ` → ${data.dest}`;
+      else if (data.error) detail = ` — ${data.error}`;
+    } else if (type === 5 || type === 6) {
+      if (data.error) detail = ` — ${data.error}`;
+    } else if (type === 10) {
+      if (data.error) detail = ` — ${data.error}`;
+    } else if (type === 12) {
+      if (data.error) detail = ` — ${data.error}`;
+    }
+    const text = type ? `[${ts}] [${level}] [${typeName}] ${msg}${detail}` : `[${ts}] [${level}] ${msg}`;
+
+    // 内存环形缓冲区（供 API 即时读取）— 存结构化数据
+    const entry = { timestamp: ts, level };
+    if (type !== null) {
+      entry.type = type;
+      entry.data = data;
+      entry.message = msg; // 简短摘要
+    } else {
+      entry.message = msg; // 旧格式纯文字
+    }
+    ringBuffer.push(entry);
     if (ringBuffer.length > MAX_BUFFER) {
       ringBuffer.splice(0, ringBuffer.length - MAX_BUFFER);
     }
 
-    // 写入文件
+    // 写入文件（格式化 JSON，每条之间空行分隔）
     if (_logFilePath) {
       try {
         rotateIfNeeded();
-        fs.appendFileSync(_logFilePath, text + '\n', 'utf-8');
-      } catch { /* 写入失败时静默处理 */ }
+        const jsonObj = { ts, level };
+        if (type !== null) {
+          jsonObj.type = type;
+          jsonObj.data = data;
+        } else {
+          jsonObj.msg = msg;
+        }
+        fs.appendFileSync(_logFilePath, JSON.stringify(jsonObj, null, 2) + '\n\n', 'utf-8');
+      } catch {}
     }
 
     // 写入控制台

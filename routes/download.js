@@ -6,6 +6,12 @@ const { pipeline } = require('stream/promises');
 const { resolveSafePath } = require('../middleware/pathSafety');
 const logger = require('../utils/logger');
 
+function formatSize(bytes) {
+  if (bytes >= 1024 * 1024) return (bytes / 1024 / 1024).toFixed(1) + ' MB';
+  if (bytes >= 1024) return (bytes / 1024).toFixed(1) + ' KB';
+  return bytes + ' B';
+}
+
 // MIME 类型映射
 const MIME_TYPES = {
   '.txt': 'text/plain; charset=utf-8',
@@ -76,14 +82,21 @@ function createDownloadRouter(config) {
       res.setHeader('Content-Type', contentType);
       res.setHeader('Content-Length', stat.size);
 
-      logger.info(`下载文件: ${resolved.absolutePath} (${stat.size} bytes)`);
+      const displayName = path.basename(resolved.absolutePath);
+      logger.info({ message: `${displayName} (${formatSize(stat.size)})`, type: 5, data: { op: 1, file: displayName, size: formatSize(stat.size) } });
       await pipeline(createReadStream(resolved.absolutePath), res);
     } catch (err) {
-      if (err.code === 'ENOENT') return res.status(404).json({ error: 'File not found' });
-      if (err.code === 'EACCES') return res.status(403).json({ error: 'Permission denied' });
+      if (err.code === 'ENOENT') {
+        logger.warn({ message: `${path.basename(resolved.absolutePath)} — not found`, type: 5, data: { op: 2, file: path.basename(resolved.absolutePath), error: 'not found' } });
+        return res.status(404).json({ error: 'File not found' });
+      }
+      if (err.code === 'EACCES') {
+        logger.warn({ message: `${path.basename(resolved.absolutePath)} — permission denied`, type: 5, data: { op: 2, file: path.basename(resolved.absolutePath), error: 'permission denied' } });
+        return res.status(403).json({ error: 'Permission denied' });
+      }
       // pipeline 错误：如果响应头已发送（下载中断），不覆盖已发出的响应
       if (!res.headersSent) {
-        logger.error('下载失败:', resolved.absolutePath, err.message);
+        logger.error({ message: `${path.basename(resolved.absolutePath)} — ${err.message}`, type: 5, data: { op: 2, file: path.basename(resolved.absolutePath), error: err.message } });
         res.status(500).json({ error: 'Error reading file' });
       }
     }

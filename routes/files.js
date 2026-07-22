@@ -83,8 +83,38 @@ function createFilesRouter(config) {
       if (err.code === 'EACCES' || err.code === 'EPERM') {
         return res.status(403).json({ error: 'Permission denied' });
       }
-      logger.error('读取目录失败:', resolved.absolutePath, err.message);
+      logger.error({ message: resolved.absolutePath, type: 10, data: { op: 1, dir: resolved.absolutePath, error: err.message } });
       res.status(500).json({ error: 'Internal server error' });
+    }
+  });
+
+  /**
+   * POST /api/files/open — 用系统默认程序打开文件（仅本机有效）
+   */
+  router.post('/open', async (req, res) => {
+    const userPath = req.body.path;
+    if (!userPath) return res.status(400).json({ error: 'Missing path' });
+
+    const activeRoots = config.roots && config.roots.length > 0 ? config.roots : [];
+    if (activeRoots.length === 0) return res.status(400).json({ error: '请先添加共享目录' });
+
+    const resolved = resolveSafePath(userPath, activeRoots);
+    if (!resolved.valid) return res.status(403).json({ error: resolved.error });
+
+    try {
+      const stat = await fs.stat(resolved.absolutePath);
+      if (stat.isDirectory()) return res.status(400).json({ error: '不能打开目录' });
+      const filename = path.basename(resolved.absolutePath);
+      require('child_process').exec(`start "" "${resolved.absolutePath}"`, (err) => {
+        if (err) {
+          logger.error({ message: `${filename} — ${err.message}`, type: 6, data: { op: 2, file: filename, error: err.message } });
+          return res.status(500).json({ error: err.message });
+        }
+        logger.info({ message: filename, type: 6, data: { op: 1, file: filename } });
+        res.json({ success: true });
+      });
+    } catch (err) {
+      res.status(500).json({ error: 'File not found' });
     }
   });
 

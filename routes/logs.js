@@ -31,7 +31,18 @@ function createLogsRouter(logger) {
    */
   router.delete('/', (req, res) => {
     logger.clearBuffer();
-    logger.info('[日志] 已清空');
+    logger.info({ message: 'cleared', type: 11, data: { op: 1 } });
+    res.json({ success: true });
+  });
+
+  /**
+   * POST /api/logs — 写入日志（供前端调用）
+   */
+  router.post('/', (req, res) => {
+    const { level = 'info', message } = req.body || {};
+    if (!message) return res.status(400).json({ error: 'missing message' });
+    const fn = logger[level] || logger.info;
+    fn(message);
     res.json({ success: true });
   });
 

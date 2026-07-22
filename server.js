@@ -109,9 +109,9 @@ app.get('/api/server-info', (req, res) => {
 function saveConfig() {
   try {
     fs.writeFileSync(configPath, JSON.stringify(config, null, 2), 'utf-8');
-    logger.info('[配置] 已保存');
+    logger.info({ message: '已保存', type: 8, data: { op: 1, field: 'config', value: 'saved' } });
   } catch (err) {
-    logger.error('[配置] 保存失败:', err.message);
+    logger.error({ message: err.message, type: 8, data: { op: 1, field: 'config', error: err.message } });
     throw err;
   }
 }
@@ -163,6 +163,7 @@ app.post('/api/roots', (req, res) => {
     return res.status(500).json({ error: '保存配置失败: ' + err.message });
   }
 
+  logger.info({ message: absPath, type: 7, data: { op: 1, dir: absPath } });
   res.json({
     roots: config.roots.map(r => ({
       name: path.basename(r),
@@ -188,6 +189,7 @@ app.delete('/api/roots', (req, res) => {
     return res.status(500).json({ error: '保存配置失败: ' + err.message });
   }
 
+  logger.info({ message: targetPath, type: 7, data: { op: 2, dir: targetPath } });
   res.json({
     roots: config.roots.map(r => ({
       name: path.basename(r),
@@ -228,6 +230,9 @@ app.put('/api/config', (req, res) => {
   try { saveConfig(); } catch (err) {
     return res.status(500).json({ error: '保存配置失败: ' + err.message });
   }
+  if (port !== undefined) logger.info({ message: `port: ${port}`, type: 8, data: { op: 1, field: 'port', value: port } });
+  if (maxFileSizeMB !== undefined) logger.info({ message: `maxFileSizeMB: ${maxFileSizeMB}`, type: 8, data: { op: 1, field: 'maxFileSizeMB', value: maxFileSizeMB } });
+  if (showHiddenFiles !== undefined) logger.info({ message: `showHiddenFiles: ${showHiddenFiles}`, type: 8, data: { op: 1, field: 'showHiddenFiles', value: showHiddenFiles } });
   res.json({ success: true });
 });
 
@@ -275,7 +280,7 @@ app.get('*', (req, res) => {
 
 // ============ 全局错误处理 ============
 app.use((err, req, res, next) => {
-  logger.error('Unhandled error:', err);
+  logger.error({ message: err.message || err, type: 12, data: { op: 1, error: err.message || err } });
   res.status(500).json({ error: 'Internal server error' });
 });
 
@@ -291,9 +296,9 @@ function startServer(portOverride) {
     process.stdout.write('══════════════════════════════════════════\n');
     process.stdout.write('  📁  LanDisk 服务已启动\n');
     process.stdout.write('══════════════════════════════════════════\n');
-    logger.info(`  🌐 本机访问: http://localhost:${port}`);
-    logger.info(`  📱 内网访问: ${url}`);
-    logger.info(`  📂 共享目录: ${config.roots.join(', ')}`);
+    logger.info({ message: `local: http://localhost:${port}`, type: 9, data: { op: 1, desc: 'local access', url: `http://localhost:${port}` } });
+    logger.info({ message: `lan: ${url}`, type: 9, data: { op: 1, desc: 'lan access', url } });
+    logger.info({ message: `dirs: ${config.roots.join(', ')}`, type: 9, data: { op: 1, desc: 'shared dirs', dirs: config.roots } });
     process.stdout.write('══════════════════════════════════════════\n');
     process.stdout.write('\n');
 
@@ -303,9 +308,9 @@ function startServer(portOverride) {
       qrcode.toString(url, { type: 'terminal', small: true }, (err, qr) => {
         if (!err) process.stdout.write(qr + '\n');
       });
-      logger.info(`📱 手机扫码访问: ${url}`);
+      logger.info({ message: `qr: ${url}`, type: 9, data: { op: 1, desc: 'qr access', url } });
     } catch {
-      logger.info(`📱 手机浏览器打开: ${url}`);
+      logger.info({ message: `browser: ${url}`, type: 9, data: { op: 1, desc: 'browser access', url } });
     }
 });
 }

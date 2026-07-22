@@ -37,11 +37,11 @@ function createDeleteRouter(config) {
       const stat = await fs.stat(resolved.absolutePath);
       try {
         await moveToTrash(resolved.absolutePath, stat.isDirectory());
-        logger.info(`删除成功(回收站): ${resolved.absolutePath}`);
+        logger.info({ message: `${resolved.absolutePath} → trash`, type: 4, data: { op: 1, file: resolved.absolutePath, dest: 'trash' } });
         return res.json({ message: '已移入回收站' });
       } catch {
         // 回收站失败则永久删除
-        logger.warn(`回收站不可用，已永久删除: ${resolved.absolutePath}`);
+        logger.warn({ message: `${resolved.absolutePath} → permanent`, type: 4, data: { op: 2, file: resolved.absolutePath, dest: 'permanent' } });
         if (stat.isDirectory()) {
           await fs.rm(resolved.absolutePath, { recursive: true });
         } else {
@@ -51,14 +51,14 @@ function createDeleteRouter(config) {
       }
     } catch (err) {
       if (err.code === 'ENOENT') {
-        logger.warn('删除失败-文件不存在:', resolved.absolutePath);
+        logger.warn({ message: `${resolved.absolutePath} — not found`, type: 4, data: { op: 3, file: resolved.absolutePath, error: 'not found' } });
         return res.status(404).json({ error: 'Not found' });
       }
       if (err.code === 'EACCES' || err.code === 'EPERM') {
-        logger.warn('删除失败-权限不足:', resolved.absolutePath);
+        logger.warn({ message: `${resolved.absolutePath} — permission denied`, type: 4, data: { op: 3, file: resolved.absolutePath, error: 'permission denied' } });
         return res.status(403).json({ error: 'Permission denied' });
       }
-      logger.error('删除失败:', resolved.absolutePath, err.message);
+      logger.error({ message: `${resolved.absolutePath} — ${err.message}`, type: 4, data: { op: 3, file: resolved.absolutePath, error: err.message } });
       res.status(500).json({ error: 'Delete failed' });
     }
   });
