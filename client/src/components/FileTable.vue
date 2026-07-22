@@ -345,10 +345,19 @@ async function confirmDelete(row) {
   } catch { /* cancelled */ }
 }
 
+function isLocalhost() {
+  const h = location.hostname
+  return h === 'localhost' || h === '127.0.0.1'
+}
+
 function handleRowClick(row) {
   if (row.isDirectory) {
     openDir(row.name)
+  } else if (isLocalhost() || window.__TAURI__) {
+    const fileUrl = 'file:///' + row.fullPath.replace(/\\/g, '/')
+    window.open(fileUrl, '_blank')
   }
+  // 其他设备：无操作
 }
 </script>
 

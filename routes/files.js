@@ -57,7 +57,8 @@ function createFilesRouter(config) {
             size: entryStat.size,
             modified: entryStat.mtime.toISOString(),
             isDirectory: dirent.isDirectory(),
-            extension: dirent.isDirectory() ? null : path.extname(dirent.name).toLowerCase()
+            extension: dirent.isDirectory() ? null : path.extname(dirent.name).toLowerCase(),
+            fullPath
           };
         })
       );
