@@ -146,7 +146,7 @@ function createUploadRouter(config) {
           }
         }
         const lines = blockedNames.map(n => `    ${n}`).join('\n');
-        logger.warn({ message: `${blocked} 个：\n${lines}`, type: 3, data: { op: 1, count: blocked, files: blockedNames } });
+        logger.warn({ message: `${blocked} 个 → ${targetDir}：\n${lines}`, type: 3, data: { op: 1, dir: targetDir, count: blocked, files: blockedNames } });
       }
       if (uploaded > 0) parts.push(`新增 ${uploaded} 个`);
       if (replaced > 0) parts.push(`替换 ${replaced} 个`);

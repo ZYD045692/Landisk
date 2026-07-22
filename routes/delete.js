@@ -38,7 +38,7 @@ function createDeleteRouter(config) {
       try {
         await moveToTrash(resolved.absolutePath, stat.isDirectory());
         logger.info({ message: `${resolved.absolutePath} → trash`, type: 4, data: { op: 1, file: resolved.absolutePath, dest: 'trash' } });
-        return res.json({ message: '已移入回收站' });
+        return res.json({ message: '已移入回收站', dest: 'trash' });
       } catch {
         // 回收站失败则永久删除
         logger.warn({ message: `${resolved.absolutePath} → permanent`, type: 4, data: { op: 2, file: resolved.absolutePath, dest: 'permanent' } });
@@ -47,7 +47,7 @@ function createDeleteRouter(config) {
         } else {
           await fs.unlink(resolved.absolutePath);
         }
-        return res.json({ message: '已永久删除（回收站不可用）' });
+        return res.json({ message: '已永久删除（回收站不可用）', dest: 'permanent' });
       }
     } catch (err) {
       if (err.code === 'ENOENT') {

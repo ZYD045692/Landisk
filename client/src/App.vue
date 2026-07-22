@@ -15,8 +15,8 @@
           {{ roots.length }} 个目录
         </el-tag>
         <el-button circle :icon="Iphone" size="small" title="手机扫码" @click="showQR = true" />
-        <el-button circle :icon="Setting" size="small" title="设置" @click="openSettings" />
-        <el-button circle :icon="Reading" size="small" title="服务器日志" @click="openLogs" />
+        <el-button circle :icon="Setting" size="small" title="设置" @click="$refs.settings.open()" />
+        <el-button circle :icon="Reading" size="small" title="服务器日志" @click="$refs.logViewer.open()" />
       </div>
 
       <!-- 手机连接 Dialog -->
@@ -31,106 +31,10 @@
           <p class="qr-hint">手机和电脑需在同一 WiFi 下</p>
         </div>
       </el-dialog>
+
+      <SettingsDialog ref="settings" />
+      <LogViewer ref="logViewer" />
     </el-header>
-
-    <!-- 设置 Dialog -->
-    <el-dialog v-model="showSettings" title="设置" width="520px" destroy-on-close>
-      <div class="settings-body">
-        <div class="settings-section">
-          <div class="section-title">服务配置</div>
-          <div class="setting-row">
-            <span class="setting-label">端口号</span>
-            <el-input-number v-model="configPort" :min="1" :max="65535" size="small" controls-position="right" style="width:160px" />
-          </div>
-          <div class="setting-row">
-            <span class="setting-label">最大上传 (MB)</span>
-            <el-input-number v-model="configMaxSize" :min="1" :max="9999" size="small" controls-position="right" style="width:160px" />
-          </div>
-          <div class="setting-row">
-            <span class="setting-label">显示隐藏文件</span>
-            <el-switch v-model="configShowHidden" size="small" />
-          </div>
-          <div class="setting-actions">
-            <el-button type="primary" size="small" @click="handleSaveConfig" :loading="configSaving">保存设置</el-button>
-            <span v-if="configSaved" class="success-msg">✓ 已保存</span>
-          </div>
-        </div>
-
-        <el-divider />
-
-        <div class="settings-section">
-          <div class="section-title">共享目录</div>
-          <div v-if="roots.length === 0" class="empty-hint">暂无共享目录</div>
-          <div v-for="root in roots" :key="root.path" class="root-item">
-            <div class="root-info">
-              <el-icon :size="18"><Folder /></el-icon>
-              <span class="root-name">{{ root.name }}</span>
-              <span class="root-path">{{ root.path }}</span>
-            </div>
-            <el-button type="danger" size="small" plain @click="handleRemoveRoot(root.path)">
-              移除
-            </el-button>
-          </div>
-          <div class="add-section">
-            <el-input
-              v-model="newRootPath"
-              placeholder="输入目录绝对路径，如 D:\Share"
-              clearable
-              @keyup.enter="handleAddRoot"
-            />
-            <el-button type="primary" size="small" @click="handleAddRoot" :loading="adding">
-              添加
-            </el-button>
-          </div>
-        </div>
-        <div v-if="settingsError" class="error-msg">{{ settingsError }}</div>
-      </div>
-    </el-dialog>
-
-    <!-- 日志查看 Dialog -->
-    <el-dialog v-model="showLogs" title="服务器日志" width="750px" top="5vh" destroy-on-close @close="onLogsClose">
-      <div class="logs-body">
-        <div class="logs-toolbar">
-          <div class="log-level-filters">
-            <el-button size="small" :type="logLevelFilter === '' ? 'primary' : 'default'" @click="logLevelFilter = ''">全部</el-button>
-            <el-button size="small" :type="logLevelFilter === 'INFO' ? 'primary' : 'default'" @click="logLevelFilter = 'INFO'">INFO</el-button>
-            <el-button size="small" :type="logLevelFilter === 'WARN' ? 'warning' : 'default'" @click="logLevelFilter = 'WARN'">WARN</el-button>
-            <el-button size="small" :type="logLevelFilter === 'ERROR' ? 'danger' : 'default'" @click="logLevelFilter = 'ERROR'">ERROR</el-button>
-          </div>
-          <el-input v-model="logFilter" placeholder="过滤日志..." clearable size="small" style="width:180px" />
-          <div style="margin-left:auto; display:flex; gap:12px">
-            <el-button size="small" type="danger" @click="handleClearLogs">清除本地</el-button>
-            <el-button size="small" @click="handleClearDisplay">清除显示</el-button>
-          </div>
-        </div>
-        <div class="logs-list" ref="logsListRef" @scroll="onLogsScroll">
-          <div v-if="logsLoading && logEntries.length === 0" class="logs-status">加载中...</div>
-          <div v-else-if="filteredLogs.length === 0" class="logs-status">暂无日志</div>
-          <template v-else>
-            <div v-for="(entry, i) in filteredLogs" :key="i" class="log-entry">
-              <span class="log-ts">{{ entry.timestamp }}</span>
-              <span class="log-level" :class="'log-level-' + entry.level.toLowerCase()">{{ entry.level }}</span>
-              <div class="log-msg">
-                <template v-if="showSummary(entry)">
-                  <div class="log-summary">{{ showSummary(entry) }}</div>
-                  <div v-for="(f, j) in showFiles(entry)" :key="j" class="log-file">{{ f }}</div>
-                </template>
-                <template v-else>
-                  {{ (entry.message || '').trimStart() }}
-                </template>
-              </div>
-            </div>
-          </template>
-        </div>
-        <transition name="fade">
-          <button
-            v-if="showLogs && !logsAtBottom && filteredLogs.length > 0"
-            class="scroll-bottom-btn"
-            @click="scrollToBottom"
-          >▼ 回到底部</button>
-        </transition>
-      </div>
-    </el-dialog>
 
     <!-- 全局拖拽提示 -->
     <div v-if="globalDragover" class="global-drop-overlay">
@@ -171,40 +75,31 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted, onUnmounted, nextTick, provide } from 'vue'
-import { ElMessageBox } from 'element-plus'
-import { Setting, Iphone, Reading, Delete } from '@element-plus/icons-vue'
+import { ref, onMounted, onUnmounted, provide } from 'vue'
+import { Setting, Iphone, Reading, FolderOpened } from '@element-plus/icons-vue'
 import QRCode from 'qrcode'
-import { fetchRoots, addRoot, removeRoot, fetchLogs, clearLogs, fetchConfig, updateConfig } from './api'
 import api from './api'
+import { fetchRoots } from './api'
 import xIcon from './assets/letter-x.svg'
 import picIcon from './assets/picture.svg'
+import SettingsDialog from './components/SettingsDialog.vue'
+import LogViewer from './components/LogViewer.vue'
 
 const roots = ref([])
-const showSettings = ref(false)
 const showQR = ref(false)
-const newRootPath = ref('')
-const adding = ref(false)
-const settingsError = ref('')
-
-// 配置
-const configPort = ref(22580)
-const configMaxSize = ref(500)
-const configShowHidden = ref(false)
-const configSaving = ref(false)
-const configSaved = ref(false)
 const serverUrl = ref('')
 const qrDataUrl = ref('')
 const copied = ref(false)
+const settings = ref(null)
+const logViewer = ref(null)
 
 async function loadRoots() {
   try {
     const res = await fetchRoots()
     roots.value = res.data.roots || []
-  } catch {
-    roots.value = []
-  }
+  } catch { roots.value = [] }
 }
+provide('roots', roots)
 
 const globalDragover = ref(false)
 const droppedFiles = ref(null)
@@ -227,7 +122,7 @@ async function tryConnect(retries = 5) {
     qrDataUrl.value = await QRCode.toDataURL(res.data.url, { width: 200, margin: 1 })
     serverDown.value = false
     serverRetrying.value = false
-    loadRoots()  // 重新加载根目录
+    loadRoots()
   } catch {
     if (retries > 0) {
       retryTimer = setTimeout(() => tryConnect(retries - 1), 1000)
@@ -239,19 +134,15 @@ async function tryConnect(retries = 5) {
 }
 
 onMounted(() => {
-  tryConnect()  // 连接成功后会回调 loadRoots()，无需重复调用
-  // 窗口级 dragleave：拖出窗口时清除提示（dragover 会停止触发）
+  tryConnect()
   window.addEventListener('dragleave', (e) => {
-    if (e.clientX <= 0 || e.clientY <= 0) {
-      globalDragover.value = false
-    }
+    if (e.clientX <= 0 || e.clientY <= 0) globalDragover.value = false
   })
 })
 
 onUnmounted(() => {
   if (retryTimer) clearTimeout(retryTimer)
 })
-provide('roots', roots)
 
 function copyUrl() {
   navigator.clipboard.writeText(serverUrl.value).then(() => {
@@ -259,676 +150,53 @@ function copyUrl() {
     setTimeout(() => copied.value = false, 2000)
   }).catch(() => {})
 }
-
-async function handleAddRoot() {
-  const p = newRootPath.value.trim()
-  if (!p) return
-  adding.value = true
-  settingsError.value = ''
-  try {
-    const res = await addRoot(p)
-    roots.value = res.data.roots || []
-    newRootPath.value = ''
-  } catch (err) {
-    console.error('[添加目录] 失败:', err)
-    if (err.response) {
-      console.error('[添加目录] 状态码:', err.response.status)
-      console.error('[添加目录] 响应:', err.response.data)
-      settingsError.value = err.response.data?.error || `服务器错误 (${err.response.status})`
-    } else if (err.request) {
-      console.error('[添加目录] 无响应，请确认 Express 服务是否启动')
-      settingsError.value = '无法连接到服务，请重启应用'
-    } else {
-      settingsError.value = err.message || '添加失败'
-    }
-  } finally {
-    adding.value = false
-  }
-}
-
-async function handleRemoveRoot(targetPath) {
-  try {
-    await ElMessageBox.confirm(`确定移除共享目录「${targetPath}」？`, '确认', {
-      confirmButtonText: '移除',
-      cancelButtonText: '取消',
-      type: 'warning'
-    })
-  } catch {
-    return  // 取消则不执行
-  }
-  settingsError.value = ''
-  try {
-    const res = await removeRoot(targetPath)
-    roots.value = res.data.roots || []
-  } catch (err) {
-    settingsError.value = err.response?.data?.error || '移除失败'
-  }
-}
-
-// ============ 配置管理 ============
-
-async function loadConfig() {
-  try {
-    const res = await fetchConfig()
-    configPort.value = res.data.port
-    configMaxSize.value = res.data.maxFileSizeMB
-    configShowHidden.value = res.data.showHiddenFiles
-  } catch {}
-}
-
-async function handleSaveConfig() {
-  configSaving.value = true
-  configSaved.value = false
-  try {
-    await updateConfig({
-      port: configPort.value,
-      maxFileSizeMB: configMaxSize.value,
-      showHiddenFiles: configShowHidden.value
-    })
-    configSaved.value = true
-    setTimeout(() => configSaved.value = false, 2000)
-  } catch (err) {
-    settingsError.value = err.response?.data?.error || '保存失败'
-  } finally {
-    configSaving.value = false
-  }
-}
-
-// ============ 设置面板 ============
-
-function openSettings() {
-  showSettings.value = true
-  loadConfig()
-}
-
-// ============ 日志查看 ============
-
-const showLogs = ref(false)
-const logEntries = ref([])
-const logsLoading = ref(false)
-const logFilter = ref('')
-const logLevelFilter = ref('')
-const logsListRef = ref(null)
-const logsAtBottom = ref(true)
-let logTimer = null
-
-const TYPE_NAMES = { 1:'新增',2:'替换',3:'阻断',4:'删除',5:'下载',6:'打开',7:'根目录',8:'配置',9:'启动',10:'浏览',11:'日志',12:'服务' }
-
-/** 解析结构化日志为 { summary, files[] } 便于前端渲染 */
-function parseLog(e) {
-  if (!e.type || !e.data) return null
-  const tn = TYPE_NAMES[e.type] || e.type
-  const d = e.data || {}
-  switch (e.type) {
-    case 1: case 2:
-      return { summary: `[${tn}] ${d.count} 个 → ${d.dir}`, files: d.files ? d.files.map(f => `${f.name} (${f.size})`) : [] }
-    case 3:
-      return { summary: `[${tn}] ${d.count} 个`, files: d.files || [] }
-    case 4:
-      if (d.dest) return { summary: `[${tn}] ${d.file} → ${d.dest}` }
-      if (d.error) return { summary: `[${tn}] ${d.file} — ${d.error}` }
-      return { summary: `[${tn}] ${d.file}` }
-    case 5:
-      if (d.error) return { summary: `[${tn}] ${d.file} — ${d.error}` }
-      return { summary: `[${tn}] ${d.file} (${d.size})` }
-    case 6:
-      if (d.error) return { summary: `[${tn}] ${d.file} — ${d.error}` }
-      return { summary: `[${tn}] ${d.file}` }
-    default:
-      return null
-  }
-}
-
-// 客户端过滤：等级 + 文本
-const filteredLogs = computed(() => {
-  let result = logEntries.value
-  if (logLevelFilter.value) {
-    result = result.filter(e => e.level === logLevelFilter.value)
-  }
-  if (logFilter.value) {
-    const s = logFilter.value.toLowerCase()
-    result = result.filter(e => {
-      const p = parseLog(e)
-      return p ? (p.summary + ' ' + (p.files||[]).join(' ')).toLowerCase().includes(s) : (e.message || '').toLowerCase().includes(s)
-    })
-  }
-  return result
-})
-
-function showSummary(e) { const p = parseLog(e); return p ? p.summary : null }
-function showFiles(e) { const p = parseLog(e); return p ? (p.files || []) : [] }
-
-function openLogs() {
-  showLogs.value = true
-  logsAtBottom.value = true
-  loadLogs()
-  startAutoRefresh()
-}
-
-async function loadLogs() {
-  logsLoading.value = true
-  const wasAtBottom = logsAtBottom.value
-  try {
-    const res = await fetchLogs(500)
-    logEntries.value = res.data || []
-    await nextTick()
-    if (wasAtBottom) scrollToBottom()
-  } catch (e) {
-    console.error('[日志] 加载失败:', e)
-  } finally {
-    logsLoading.value = false
-  }
-}
-
-function onLogsScroll() {
-  const el = logsListRef.value
-  if (!el) return
-  const threshold = 30
-  logsAtBottom.value = el.scrollHeight - el.scrollTop - el.clientHeight < threshold
-}
-
-function scrollToBottom() {
-  const el = logsListRef.value
-  if (el) {
-    el.scrollTop = el.scrollHeight
-  }
-}
-
-function startAutoRefresh() {
-  if (logTimer) clearInterval(logTimer)
-  logTimer = setInterval(loadLogs, 3000)
-}
-
-function handleClearDisplay() {
-  logEntries.value = []
-}
-
-async function handleClearLogs() {
-  try {
-    await ElMessageBox.confirm('确定清空所有日志？', '确认', {
-      confirmButtonText: '清空',
-      cancelButtonText: '取消',
-      type: 'warning'
-    })
-  } catch {
-    return
-  }
-  try {
-    await clearLogs()
-    logEntries.value = []
-  } catch {}
-}
-
-function onLogsClose() {
-  if (logTimer) {
-    clearInterval(logTimer)
-    logTimer = null
-  }
-}
-
 </script>
 
 <style>
-/* 全局重置 */
-* {
-  margin: 0;
-  padding: 0;
-  box-sizing: border-box;
-}
+* { margin: 0; padding: 0; box-sizing: border-box; }
+html, body, #app { height: 100%; font-family: Inter, system-ui, sans-serif; font-weight: 500; font-size: 14px; background: #f5f7fa; -webkit-font-smoothing: antialiased; }
 
-html, body, #app {
-  height: 100%;
-  font-family: Inter, system-ui, sans-serif;
-  font-weight: 500;
-  font-size: 14px;
-  background: #f5f7fa;
-  -webkit-font-smoothing: antialiased;
-}
+.app-container { height: 100%; display: flex; flex-direction: column; }
+.app-header { background: #1a1a2e; display: flex; align-items: center; justify-content: space-between; padding: 0 20px; color: #fff; flex-shrink: 0; }
+.header-left { display: flex; align-items: center; gap: 10px; }
+.app-title { font-size: 18px; font-weight: 600; color: #e0e6ed; }
+.app-main { flex: 1; overflow-y: auto; padding: 16px; width: 100%; margin: 0 auto; }
+.app-footer { background: #fff; border-top: 1px solid #ebeef5; display: flex; align-items: center; justify-content: center; color: #909399; font-size: 12px; flex-shrink: 0; }
 
-.app-container {
-  height: 100%;
-  display: flex;
-  flex-direction: column;
-}
-
-.app-header {
-  background: #1a1a2e;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 0 20px;
-  color: #fff;
-  flex-shrink: 0;
-}
-
-.header-left {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
-
-.app-title {
-  font-size: 18px;
-  font-weight: 600;
-  color: #e0e6ed;
-}
-
-.app-main {
-  flex: 1;
-  overflow-y: auto;
-  padding: 16px;
-  width: 100%;
-  margin: 0 auto;
-}
-
-.app-footer {
-  background: #fff;
-  border-top: 1px solid #ebeef5;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: #909399;
-  font-size: 12px;
-  flex-shrink: 0;
-}
-
-/* 移动端适配 */
 @media (max-width: 768px) {
-  .app-header {
-    padding: 0 12px;
-  }
-  .app-title {
-    font-size: 16px;
-  }
-  .app-main {
-    padding: 8px;
-  }
-  /* 小屏弹窗宽度适配 */
-  .el-dialog {
-    width: 92vw !important;
-    max-width: none !important;
-  }
+  .app-header { padding: 0 12px; }
+  .app-title { font-size: 16px; }
+  .app-main { padding: 8px; }
+  .el-dialog { width: 92vw !important; max-width: none !important; }
 }
 
-/* 设置面板 */
-.header-right {
-  display: flex;
-  align-items: center;
-  gap: 18px;
-}
-.header-right > * {
-  margin: 0 !important;
-}
-.header-right .el-tag {
-  padding: 0 4px;
-}
+.header-right { display: flex; align-items: center; gap: 18px; }
+.header-right > * { margin: 0 !important; }
+.header-right .el-tag { padding: 0 4px; }
 
+.el-dialog__body { padding: 20px; }
 
-/* 弹窗 body 去掉多余的左内边距 */
-.settings-body, .logs-body {
-  padding-left: 0;
-}
-.el-dialog__body {
-  padding: 20px;
-}
+.qr-body { display: flex; flex-direction: column; align-items: center; gap: 12px; }
+.qr-image { width: 200px; height: 200px; border: 1px solid #ebeef5; border-radius: 4px; }
+.qr-url { font-size: 13px; color: #409eff; word-break: break-all; text-align: center; cursor: pointer; }
+.qr-url:hover { text-decoration: underline; }
+.qr-hint { font-size: 12px; color: #c0c4cc; margin: 0; }
 
-.settings-body {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
+.el-button, .el-input__inner, .el-table, .el-table th, .el-table td, .el-pagination, .el-tag, .el-select, .el-select-dropdown__item, .el-dropdown-menu__item, .el-radio__label, .el-checkbox__label { font-family: Inter, system-ui, sans-serif; font-weight: 500; font-size: 14px; }
 
-.settings-section {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
-
-.section-title {
-  font-size: 14px;
-  font-weight: 600;
-  color: #303133;
-}
-
-.setting-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 4px 0;
-}
-
-.setting-label {
-  font-size: 13px;
-  color: #606266;
-}
-
-.settings-footer {
-  padding-top: 8px;
-  border-top: 1px solid #ebeef5;
-}
-.log-path-hint {
-  font-size: 12px;
-  color: #909399;
-}
-
-.setting-actions {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding-top: 4px;
-}
-
-.success-msg {
-  font-size: 13px;
-  color: #67c23a;
-}
-
-.empty-hint {
-  color: #909399;
-  font-size: 14px;
-  text-align: center;
-  padding: 12px 0;
-}
-
-.root-item {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 8px 12px;
-  background: #f5f7fa;
-  border-radius: 6px;
-}
-
-.root-info {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  min-width: 0;
-}
-
-.root-name {
-  font-weight: 600;
-  white-space: nowrap;
-}
-
-.root-path {
-  color: #909399;
-  font-size: 12px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.add-section {
-  display: flex;
-  gap: 8px;
-}
-
-.add-section .el-input {
-  flex: 1;
-}
-
-.error-msg {
-  color: #f56c6c;
-  font-size: 13px;
-}
-
-/* 二维码 */
-.qr-body {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 12px;
-}
-
-.qr-image {
-  width: 200px;
-  height: 200px;
-  border: 1px solid #ebeef5;
-  border-radius: 4px;
-}
-
-.qr-url {
-  font-size: 13px;
-  color: #409eff;
-  word-break: break-all;
-  text-align: center;
-  cursor: pointer;
-}
-.qr-url:hover {
-  text-decoration: underline;
-}
-
-.qr-hint {
-  font-size: 12px;
-  color: #c0c4cc;
-  margin: 0;
-}
-
-/* Element Plus 字体统一 */
-.el-button,
-.el-input__inner,
-.el-table,
-.el-table th,
-.el-table td,
-.el-pagination,
-.el-tag,
-.el-select,
-.el-select-dropdown__item,
-.el-dropdown-menu__item,
-.el-radio__label,
-.el-checkbox__label {
-  font-family: Inter, system-ui, sans-serif;
-  font-weight: 500;
-  font-size: 14px;
-}
-
-.global-drop-overlay {
-  position: fixed;
-  inset: 0;
-  background: rgba(255,255,255,0.6);
-  backdrop-filter: blur(8px);
-  z-index: 9999;
-  pointer-events: none;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 16px;
-}
-
-.drop-icons {
-  width: 140px;
-  height: 95px;
-  margin: 0 auto;
-  position: relative;
-  margin-bottom: 24px;
-}
-
-.drop-icon-excel {
-  position: absolute;
-  width: 48px;
-  height: 48px;
-  left: 16px;
-  top: 14px;
-  border-radius: 10px;
-  transform: rotate(-16deg);
-  box-shadow: 0 8px 20px rgba(0,0,0,.05);
-  z-index: 1;
-}
-
-.drop-icon-word {
-  position: absolute;
-  width: 48px; height: 54px; right: 16px; top: 8px;
-  background: #73a8f0; border-radius: 10px; transform: rotate(16deg);
-  box-shadow: 0 8px 20px rgba(90,120,255,.15); z-index: 1;
-}
-.drop-icon-word::before, .drop-icon-word::after, .drop-icon-word span {
-  content: ""; position: absolute; left: 10px; width: 26px; height: 3px;
-  border-radius: 2px; background: white;
-}
+.global-drop-overlay { position: fixed; inset: 0; background: rgba(255,255,255,0.6); backdrop-filter: blur(8px); z-index: 9999; pointer-events: none; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 16px; }
+.drop-icons { width: 140px; height: 95px; margin: 0 auto; position: relative; margin-bottom: 24px; }
+.drop-icon-excel { position: absolute; width: 48px; height: 48px; left: 16px; top: 14px; border-radius: 10px; transform: rotate(-16deg); box-shadow: 0 8px 20px rgba(0,0,0,.05); z-index: 1; }
+.drop-icon-word { position: absolute; width: 48px; height: 54px; right: 16px; top: 8px; background: #73a8f0; border-radius: 10px; transform: rotate(16deg); box-shadow: 0 8px 20px rgba(90,120,255,.15); z-index: 1; }
+.drop-icon-word::before, .drop-icon-word::after, .drop-icon-word span { content: ""; position: absolute; left: 10px; width: 26px; height: 3px; border-radius: 2px; background: white; }
 .drop-icon-word::before { top: 14px; }
 .drop-icon-word span { top: 24px; }
 .drop-icon-word::after { top: 34px; width: 18px; }
+.drop-icon-chart { position: absolute; width: 48px; height: 48px; left: 50%; bottom: 0; transform: translateX(-50%); border-radius: 10px; z-index: 3; box-shadow: 0 8px 20px rgba(79,112,255,.2); }
+.drop-text { font-size: 20px; color: #222; margin: 0; }
 
-.drop-icon-chart {
-  position: absolute;
-  width: 48px; height: 48px; left: 50%; bottom: 0; transform: translateX(-50%);
-  border-radius: 10px; z-index: 3;
-  box-shadow: 0 8px 20px rgba(79,112,255,.2);
-}
-
-.drop-text {
-  font-size: 20px;
-  color: #222;
-  margin: 0;
-}
-
-/* 日志查看器 */
-.logs-body {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  height: 60vh;
-  position: relative;
-}
-
-.logs-toolbar {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  font-size: 12px;
-  flex-shrink: 0;
-}
-.logs-toolbar .el-button,
-.logs-toolbar .el-input__inner {
-  font-size: 12px !important;
-  margin: 0 !important;
-}
-
-.logs-list {
-  flex: 1;
-  overflow: auto;
-  background: #1a1a2e;
-  border-radius: 6px;
-  padding: 8px 0;
-  font-family: 'Cascadia Code', 'Fira Code', 'Consolas', monospace;
-  font-size: 12px;
-  line-height: 1.15;
-}
-.logs-list::-webkit-scrollbar {
-  width: 6px;
-}
-.logs-list::-webkit-scrollbar-track {
-  background: transparent;
-}
-.logs-list::-webkit-scrollbar-thumb {
-  background: rgba(255,255,255,0.15);
-  border-radius: 3px;
-}
-.logs-list::-webkit-scrollbar-thumb:hover {
-  background: rgba(255,255,255,0.25);
-}
-
-.log-entry {
-  display: flex;
-  gap: 8px;
-  padding: 1px 12px;
-  white-space: pre-wrap;
-  align-items: flex-start;
-}
-
-.log-entry:hover {
-  background: rgba(255,255,255,0.05);
-}
-
-.log-ts {
-  color: #6b7280;
-  flex-shrink: 0;
-  width: 160px;
-}
-
-.log-level {
-  flex-shrink: 0;
-  width: 52px;
-  text-align: center;
-  border-radius: 2px;
-  font-size: 11px;
-  font-weight: 600;
-}
-
-.log-msg {
-  color: #d1d5db;
-  flex: 1;
-  min-width: 0;
-  white-space: pre-wrap;
-  word-break: break-word;
-  line-height: 1.25;
-}
-
-.log-level-filters {
-  display: flex;
-  gap: 12px;
-  flex-shrink: 0;
-}
-.log-level-filters .el-button {
-  margin: 0 !important;
-}
-
-.log-file {
-  padding-left: 7ch;
-  line-height: 1.25;
-}
-.log-summary {
-  line-height: 1.25;
-}
-
-.logs-status {
-  color: #6b7280;
-  text-align: center;
-  padding: 24px;
-}
-
-/* 日志等级颜色 */
-.log-level-info {
-  color: #60a5fa;
-  background: rgba(96,165,250,0.12);
-}
-.log-level-warn {
-  color: #fbbf24;
-  background: rgba(251,191,36,0.12);
-}
-.log-level-error {
-  color: #f87171;
-  background: rgba(248,113,113,0.12);
-}
-
-/* 回到底部按钮 */
-.scroll-bottom-btn {
-  position: absolute;
-  bottom: 12px;
-  right: 12px;
-  z-index: 10;
-  padding: 6px 14px;
-  border: none;
-  border-radius: 20px;
-  background: rgba(64, 158, 255, 0.9);
-  color: #fff;
-  font-size: 12px;
-  cursor: pointer;
-  transition: background 0.2s;
-}
-.scroll-bottom-btn:hover {
-  background: #409eff;
-}
-
-/* 淡入淡出过渡 */
-.fade-enter-active,
-.fade-leave-active {
-  transition: opacity 0.25s;
-}
-.fade-enter-from,
-.fade-leave-to {
-  opacity: 0;
-}
+/* 日志文件列表对齐 */
+.log-prefix-transparent { visibility: hidden; }
+.log-pad-hidden { visibility: hidden; }
+.log-text { white-space: pre-wrap; }
 </style>

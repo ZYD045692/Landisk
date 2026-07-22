@@ -25,18 +25,28 @@ PC 和手机访问的是同一个 Express 服务，前端只存一份。
 - 全局拖拽：拖文件到窗口任意位置即可上传，毛玻璃全屏提示
 - 冲突弹窗：同名文件可选替换 / 保留两份 / 取消，支持批量统一操作
 - 文件列表刷新时逐格 shimmer 加载效果，列名不受影响
-- 删除进回收站，不丢失数据
-- 批量删除：多选 + 并行执行 + 百分比进度条
+- 删除进回收站 / 永久删除（回收站不可用时自动 fallback），不丢失数据
+- 批量删除：多选 + 并行执行 + 百分比进度条，逐条实际去向记录（回收站 / 永久删除）
+- 批量下载：多选 + 逐项浏览器下载
 - 搜索：文件名过滤
 - 排序：名称 / 大小 / 时间 / 类型（后缀）
 - 分页：5 / 10 / 20 / 50 条
 - 70+ 种文件图标，彩色分类
 - 界面内嵌二维码，手机扫码即连
-- 内置日志查看器：始终自动刷新、粘性底部、等级/文本过滤、清除显示/清除本地
+- 内置日志查看器：
+  - SSE 实时推送，无需轮询
+  - 粘性底部 + 「回到底部」按钮
+  - 等级过滤（全部 / INFO / WARN / ERROR）
+  - 文本搜索过滤
+  - 清除显示 / 清除本地（清空文件+缓冲池）
+  - 结构化 JSON 日志，统一 `[操作] N 个 → 目录` 格式
+  - 文件名固定 30 显示宽度，`(大小)` 左对齐
+  - 服务重启后自动加载最后 50 条历史
 - 系统托盘，关闭窗口后台运行
 - 开机自启（静默托盘，不弹窗）
 - 单实例，多点图标不重复启动
 - 界面管理共享目录，持久化到 `%USERPROFILE%\.landisk\`
+- 点击文件可用系统默认程序打开（本机）
 - 中文文件名上传不乱码
 - 可执行扩展名上传阻断（.exe .bat .cmd .ps1 等）
 - PC / 手机同源访问，纯本地无联网
@@ -88,18 +98,18 @@ npx tauri build        # 生成 NSIS 安装包
 ├── client/              # Vue 前端
 │   └── src/
 │       ├── api/         # 请求层
-│       ├── components/  # FileTable, UploadZone
-│       ├── utils/       # format.js (图标/大小/日期)
+│       ├── components/  # FileTable, UploadZone, LogViewer, SettingsDialog
+│       ├── utils/       # format.js (图标/大小/日期), logFormat.js (日志解析)
 │       └── views/       # FileBrowser.vue
 ├── routes/              # Express API
 │   ├── files.js         # 目录列表
 │   ├── upload.js        # 上传（去重+阻断）
-│   ├── download.js      # 文件下载
-│   ├── delete.js        # 删除（回收站）
-│   ├── logs.js          # 日志读取/清空
+│   ├── download.js      # 文件下载 + 批量下载
+│   ├── delete.js        # 删除（回收站/永久）
+│   ├── logs.js          # 日志读取/清空/SSE 推流
 │   └── roots.js         # 根目录管理
 ├── utils/
-│   └── logger.js        # 环形缓冲区日志 + 文件写入
+│   └── logger.js        # 环形缓冲区(100条) + 文件写入 + SSE 事件推送
 ├── scripts/
 │   └── bundle-server.js # 打包服务端+前端到 server-dist/
 ├── src-tauri/           # Tauri Rust

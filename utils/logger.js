@@ -1,9 +1,10 @@
 const fs = require('fs');
 const path = require('path');
+const { EventEmitter } = require('events');
 
 const MAX_SIZE = 1 * 1024 * 1024; // 1 MB
 const LOG_FILE = 'landisk.log';
-const MAX_BUFFER = 2000; // 内存环形缓冲区上限
+const MAX_BUFFER = 100; // 内存环形缓冲区上限
 
 let _logDir = null;
 let _logFilePath = null;
@@ -11,6 +12,11 @@ let _currentDate = null;
 
 // 内存环形缓冲区 — API 从此读取，零文件 I/O
 const ringBuffer = [];
+
+// SSE 推流 — 新日志实时通知前端
+const logEmitter = new EventEmitter();
+function onLog(fn) { logEmitter.on('log', fn); }
+function offLog(fn) { logEmitter.off('log', fn); }
 
 function pad2(n) {
   return String(n).padStart(2, '0');
@@ -40,6 +46,35 @@ function init(dir) {
     _logDir = null;
     _logFilePath = null;
   }
+
+  // 启动时从日志文件抓取最后 50 条，避免重启后日志查看器空白
+  loadFromFile(50);
+}
+
+function loadFromFile(count) {
+  if (!_logFilePath) return;
+  try {
+    const content = fs.readFileSync(_logFilePath, 'utf-8');
+    const blocks = content.split('\n\n').filter(Boolean);
+    const entries = [];
+    for (const block of blocks) {
+      try {
+        const parsed = JSON.parse(block);
+        entries.push({
+          timestamp: parsed.ts,
+          level: parsed.level,
+          type: parsed.type,
+          data: parsed.data,
+          message: parsed.msg || ''
+        });
+      } catch { /* 跳过无法解析的行 */ }
+    }
+    const loaded = entries.slice(-count);
+    for (const e of loaded) {
+      ringBuffer.push(e);
+    }
+    if (loaded.length > 0) console.log(`[日志] 从文件加载 ${loaded.length} 条历史`);
+  } catch { /* 文件不存在或无法读取 */ }
 }
 
 function rotateIfNeeded() {
@@ -135,6 +170,7 @@ function write(level, stream) {
     if (ringBuffer.length > MAX_BUFFER) {
       ringBuffer.splice(0, ringBuffer.length - MAX_BUFFER);
     }
+    logEmitter.emit('log', entry);
 
     // 写入文件（格式化 JSON，每条之间空行分隔）
     if (_logFilePath) {
@@ -198,5 +234,7 @@ module.exports = {
   getLogPath: () => _logFilePath,
   getLogDir: () => _logDir,
   getBuffer,
-  clearBuffer
+  clearBuffer,
+  onLog,
+  offLog
 };

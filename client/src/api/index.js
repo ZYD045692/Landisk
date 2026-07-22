@@ -91,4 +91,31 @@ export function updateConfig(data) {
   return api.put('/config', data)
 }
 
+/**
+ * 记录批量下载日志
+ * @param {object} data - { dir, files: [{name, size}] }
+ */
+export function batchDownloadLog(data) {
+  return api.post('/logs', {
+    level: 'info',
+    message: `${data.files.length} 个 → ${data.dir}`,
+    type: 5,
+    data: { op: 1, count: data.files.length, dir: data.dir, files: data.files }
+  })
+}
+
+/**
+ * 记录批量删除日志
+ * @param {object} data - { dir, files: [{name}] }
+ */
+export function batchDeleteLog(data) {
+  const op = data.dest === '永久删除' ? 2 : 1
+  return api.post('/logs', {
+    level: 'info',
+    message: `${data.files.length} 个 ${data.dir} → ${data.dest}`,
+    type: 4,
+    data: { op, count: data.files.length, dir: data.dir, dest: data.dest, files: data.files }
+  })
+}
+
 export default api

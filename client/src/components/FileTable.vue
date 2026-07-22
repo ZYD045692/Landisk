@@ -29,6 +29,7 @@
       </div>
       <div v-if="selected.length > 0" class="batch-bar">
         <span class="batch-count">已选 {{ selected.length }} 项</span>
+        <el-button size="small" type="primary" @click="batchDownload">批量下载</el-button>
         <el-button size="small" type="danger" @click="batchDelete" :loading="batchDeleting">批量删除</el-button>
         <el-button size="small" @click="selected = []">取消选择</el-button>
       </div>
@@ -193,7 +194,7 @@ import { ref, computed, watch } from 'vue'
 import { ElMessageBox, ElMessage } from 'element-plus'
 import { Delete, Download, ArrowRight, Search, Refresh } from '@element-plus/icons-vue'
 import { getFileIcon, formatFileSize, formatDate } from '../utils/format'
-import { getDownloadUrl, deleteFile } from '../api'
+import { getDownloadUrl, deleteFile, batchDownloadLog, batchDeleteLog } from '../api'
 
 async function openFileRow(path) {
   try {
@@ -318,18 +319,38 @@ async function batchDelete() {
     const results = await Promise.allSettled(
       selected.value.map(async row => {
         const filePath = (props.currentPath === '/' ? '' : props.currentPath) + '/' + row.name
-        try { await deleteFile(filePath) } catch { /* skip */ }
-        completed++
-        deleteProgress.value = Math.round((completed / count) * 100)
+        try {
+          const res = await deleteFile(filePath)
+          return { name: row.name, dest: res.data.dest || 'trash' }
+        } catch { return { name: row.name, dest: null } }
+        finally { completed++; deleteProgress.value = Math.round((completed / count) * 100) }
       })
     )
-    const success = results.filter(r => r.status === 'fulfilled').length
+    const success = results.filter(r => r.status === 'fulfilled' && r.value?.dest)
+    const dir = props.currentPath === '/' ? '/' : props.currentPath
+    const deletedFiles = success.map(r => ({ name: r.value.name }))
     selected.value = []
     deleteProgress.value = 0
     batchDeleting.value = false
-    ElMessage.success(`已删除 ${success} / ${count} 个项目`)
+    ElMessage.success(`已删除 ${success.length} / ${count} 个项目`)
+    if (success.length > 0) {
+      const destMap = { trash: '回收站', permanent: '永久删除' }
+      const firstDest = success[0].value.dest
+      const dest = destMap[firstDest] || firstDest
+      batchDeleteLog({ dir, files: deletedFiles, dest }).catch(() => {})
+    }
     emit('deleted')
   } catch { batchDeleting.value = false }
+}
+
+function batchDownload() {
+  const dir = props.currentPath === '/' ? '/' : props.currentPath
+  const files = selected.value.filter(r => !r.isDirectory).map(r => ({ name: r.name, size: formatFileSize(r.size) }))
+  selected.value.forEach((row, i) => {
+    const filePath = (props.currentPath === '/' ? '' : props.currentPath) + '/' + row.name
+    setTimeout(() => window.open(getDownloadUrl(filePath), '_blank'), i * 300)
+  })
+  if (files.length > 0) batchDownloadLog({ dir, files }).catch(() => {})
 }
 
 // 原有功能
@@ -355,8 +376,8 @@ async function confirmDelete(row) {
       { confirmButtonText: '删除', cancelButtonText: '取消', type: 'warning', confirmButtonClass: 'el-button--danger' }
     )
     const filePath = (props.currentPath === '/' ? '' : props.currentPath) + '/' + row.name
-    await deleteFile(filePath)
-    ElMessage.success('已移入回收站')
+    const res = await deleteFile(filePath)
+    ElMessage.success(res.data.dest === 'permanent' ? '已永久删除（回收站不可用）' : '已移入回收站')
     emit('deleted')
   } catch { /* cancelled */ }
 }
