@@ -31,6 +31,7 @@
       :loading="loading"
       :error="error"
       :current-path="currentPath"
+      :root-index="roots.length > 1 ? activeRoot : undefined"
       :pin-top="pinnedNames"
       @open-dir="openDirectory"
       @retry="loadDirectory"

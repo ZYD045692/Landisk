@@ -62,7 +62,11 @@ function createDownloadRouter(config) {
       return res.status(400).json({ error: '请先添加共享目录' });
     }
 
-    const resolved = resolveSafePath(userPath, config.roots);
+    // 如果前端传了 root 索引，只在该根目录下解析
+    const roots = (req.query.root !== undefined && config.roots[req.query.root])
+      ? [config.roots[req.query.root]]
+      : config.roots;
+    const resolved = resolveSafePath(userPath, roots);
     if (!resolved.valid) {
       return res.status(403).json({ error: resolved.error });
     }

@@ -217,6 +217,7 @@ const props = defineProps({
   loading: { type: Boolean, default: false },
   error: { type: String, default: '' },
   currentPath: { type: String, default: '/' },
+  rootIndex: { type: Number, default: undefined },
   pinTop: { type: Array, default: () => [] }
 })
 
@@ -348,7 +349,7 @@ function batchDownload() {
   const files = selected.value.filter(r => !r.isDirectory).map(r => ({ name: r.name, size: formatFileSize(r.size) }))
   selected.value.forEach((row, i) => {
     const filePath = (props.currentPath === '/' ? '' : props.currentPath) + '/' + row.name
-    setTimeout(() => window.open(getDownloadUrl(filePath), '_blank'), i * 300)
+    setTimeout(() => window.open(getDownloadUrl(filePath, props.rootIndex), '_blank'), i * 300)
   })
   if (files.length > 0) batchDownloadLog({ dir, files }).catch(() => {})
 }
@@ -364,7 +365,7 @@ function openDir(name) {
 
 function downloadFile(row) {
   const filePath = (props.currentPath === '/' ? '' : props.currentPath) + '/' + row.name
-  window.open(getDownloadUrl(filePath), '_blank')
+  window.open(getDownloadUrl(filePath, props.rootIndex), '_blank')
 }
 
 async function confirmDelete(row) {

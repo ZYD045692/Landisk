@@ -29,8 +29,12 @@ export function fetchRoots() {
  * 获取下载链接
  * @param {string} filePath - 文件路径
  */
-export function getDownloadUrl(filePath) {
-  return `/api/download?path=${encodeURIComponent(filePath)}`
+export function getDownloadUrl(filePath, rootIndex) {
+  let url = `/api/download?path=${encodeURIComponent(filePath)}`
+  if (rootIndex !== undefined && rootIndex !== null) {
+    url += `&root=${rootIndex}`
+  }
+  return url
 }
 
 /**
