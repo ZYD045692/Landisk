@@ -18,13 +18,14 @@ cd client && npm run build     # 构建到 client/dist/，Express 托管
 npm install && cd client && npm install
 
 # 构建安装包
-npm run build:server           # 构建前端 + 打包后端到 server-dist/
-npx tauri build                # 生成 NSIS 安装包 (.exe)
+npm run build:server           # ① 构建前端(client/dist) → ② 打包后端+依赖到 server-dist/
+npx tauri build                # ③ 生成 NSIS 安装包 (.exe)
+npm run build:tauri            # 一键：build:server → npx tauri build → copy-installer
 ```
 
 ## 项目概览
 
-**LanDisk** — 局域网文件快传桌面应用。Tauri 2 壳承载一个 Express 服务，同一进程提供 REST API 和 Vue 3 + Element Plus 前端页面。手机和 PC 在同一 WiFi 下访问同一服务，扫码即连。
+**LanDisk** — 局域网文件快传桌面应用。Tauri 2 壳承载一个 Express 服务，同一进程提供 REST API 和 Vue 3 + Element Plus 前端页面。手机和 PC 在同一局域网下访问同一服务，扫码即连。
 
 | 层 | 技术 |
 |---|---|
@@ -35,7 +36,21 @@ npx tauri build                # 生成 NSIS 安装包 (.exe)
 
 ### Tauri 架构
 
-`src-tauri/src/lib.rs` 管理窗口、系统托盘、单实例锁、开机自启。Express 作为 sidecar 由 Tauri 管理生命周期 — `npm start` = `npx tauri dev`。构建产物：`src-tauri/target/release/bundle/nsis/LanDisk_*_x64-setup.exe`。
+`src-tauri/src/lib.rs` 管理窗口（1024×633）、系统托盘、单实例锁、开机自启。Express 作为 sidecar 由 Tauri 管理生命周期 — `npm start` = `npx tauri dev`。
+
+### 构建流程
+
+```
+① cd client && npm run build         前端编译到 client/dist/
+② node scripts/bundle-server.js      复制 server 源码 + client/dist/ + 生产依赖到 server-dist/
+③ npx tauri build                    用 server-dist/ 生成 NSIS 安装包
+④ node scripts/copy-installer.js     把安装包复制到 dist/
+```
+
+`npm run build:server` = ①+②
+`npm run build:tauri`  = ①+②+③+④
+
+产物：`dist/LanDisk_*_x64-setup.exe`
 
 ### 配置持久化
 
@@ -130,133 +145,9 @@ client/src/
 
 `dragleave` 事件检测鼠标离开窗口边界时关闭覆盖层。
 
-## 日志结构化 JSON 格式
+### 日志格式
 
-日志文件 `%USERPROFILE%\.landisk\logs\landisk.log` 每记录一个 JSON 块：
-
-```json
-{
-  "ts": "2026-07-22 22:04:50",
-  "level": "INFO",
-  "type": 1,
-  "data": { "op": 1, "dir": "D:\\test", "count": 4, "files": [...] }
-}
-```
-
-### type 码表
-
-| type | 操作 |
-|---|---|
-| 1 | 新增 |
-| 2 | 替换 |
-| 3 | 阻断 |
-| 4 | 删除 |
-| 5 | 下载 |
-| 6 | 打开 |
-| 7 | 根目录 |
-| 8 | 配置 |
-| 9 | 启动 |
-| 10 | 浏览 |
-| 11 | 日志 |
-| 12 | 服务 |
-
-### data.op 码表
-
-#### type 1=新增 / 2=替换
-```json
-{"op": 1, "dir": "D:\\test", "count": 4, "files": [{"name": "a.pdf", "size": "3.5 MB"}]}
-```
-
-#### type 3=阻断
-```json
-{"op": 1, "count": 2, "files": ["setup.exe", "install.bat"]}
-```
-
-#### type 4=删除
-| op | 含义 |
-|---|---|
-| 1 | 回收站 |
-| 2 | 永久删除 |
-| 3 | 失败 |
-
-```json
-{"op": 1, "file": "D:\\a.pdf", "dest": "trash"}
-{"op": 2, "file": "D:\\a.pdf", "dest": "permanent"}
-{"op": 3, "file": "D:\\a.pdf", "error": "not found"}
-```
-
-#### type 5=下载
-| op | 含义 |
-|---|---|
-| 1 | 成功 |
-| 2 | 失败 |
-
-```json
-{"op": 1, "file": "report.pdf", "size": "1.2 MB"}
-{"op": 2, "file": "report.pdf", "error": "not found"}
-```
-
-#### type 6=打开
-| op | 含义 |
-|---|---|
-| 1 | 成功 |
-| 2 | 失败 |
-
-```json
-{"op": 1, "file": "report.pdf"}
-{"op": 2, "file": "report.pdf", "error": "permission denied"}
-```
-
-#### type 7=根目录
-| op | 含义 |
-|---|---|
-| 1 | 添加 |
-| 2 | 移除 |
-
-```json
-{"op": 1, "dir": "D:\\Share"}
-{"op": 2, "dir": "D:\\OldShare"}
-```
-
-#### type 8=配置
-```json
-{"op": 1, "field": "port", "value": 22581}
-```
-
-#### type 9=启动
-```json
-{"op": 1, "desc": "local access", "url": "http://localhost:22580"}
-```
-
-#### type 10=浏览
-```json
-{"op": 1, "dir": "D:\\Share", "error": "permission denied"}
-```
-
-#### type 11=日志
-```json
-{"op": 1}
-```
-
-#### type 12=服务
-```json
-{"op": 1, "error": "xxx is not defined"}
-```
-
-### data 通用字段
-
-| 字段 | 说明 | 出现于 type |
-|---|---|---|
-| `dir` | 目录路径 | 1, 2, 7, 10 |
-| `file` | 文件路径或文件名 | 4, 5, 6 |
-| `files` | 文件列表 | 1, 2, 3 |
-| `dest` | 去向（trash/permanent） | 4 |
-| `size` | 文件大小文字 | 1, 2, 5 |
-| `error` | 错误原因 | 4, 5, 6, 10, 12 |
-| `field` | 配置字段名 | 8 |
-| `value` | 配置值 | 8 |
-| `desc` | 启动描述 | 9 |
-| `url` | 访问地址 | 9 |
+日志采用结构化 JSON，完整 type/op 码表见 [LOG_FORMAT.md](LOG_FORMAT.md)。
 
 ## 日志内存缓冲
 
@@ -277,3 +168,29 @@ client/src/
                                          ▼
                     logEntries.push() + 粘性滚动
 ```
+
+## 路径归一化
+
+`server.js` 中 `POST /api/roots` 使用 `fs.realpathSync.native()` 统一路径大小写，避免 Windows 盘符大小写（`D:` / `d:`）导致同一目录被重复添加。
+
+## 路由兜底
+
+`client/src/router/index.js` 设有 `/:pathMatch(.*)*` 兜底路由，未知路径自动重定向到 `/`。
+
+## 无共享目录提示
+
+`client/src/views/FileBrowser.vue` 在 `roots.length === 0` 时显示引导提示，URL 自动清除查询参数。
+
+## 测试
+
+测试脚本位于 `test/` 目录：
+
+| 脚本 | 说明 |
+|---|---|
+| `test/verify.js` | 文件系统验证工具：dirExists, fileExists, filesMatch, fileIs, checkConfigRoots 等 |
+| `test/setup.js` | 创建测试目录 testdir/{testdira/testa, testdirb/testb, tmp} |
+| `test/verify-clean.js` | 删除 testdir/ + 检查 config 残留 |
+| `test/test-api.js` | API 功能测试（23 项），用 verify.js 断言 |
+| `test/test-crawl.js` | 爬虫功能测试（15 项），纯 UI 操作 |
+
+全部测试通过：`node test/setup.js && node test/test-api.js && node test/setup.js && node test/test-crawl.js`

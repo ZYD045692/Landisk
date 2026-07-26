@@ -53,14 +53,23 @@ function navigate(path) {
   border: 1px solid #ebeef5;
   overflow-x: auto;
   white-space: nowrap;
+  display: flex;
+  align-items: center;
+}
+
+:deep(.el-breadcrumb__item) { vertical-align: middle; }
+
+.breadcrumb-wrapper a,
+.breadcrumb-wrapper .current-path {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  vertical-align: middle;
 }
 
 .breadcrumb-wrapper a {
   color: #409eff;
   text-decoration: none;
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
 }
 
 .breadcrumb-wrapper a:hover {

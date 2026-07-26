@@ -27,11 +27,20 @@ function createLogsRouter(logger) {
   });
 
   /**
-   * DELETE /api/logs — 清空日志缓冲区
+   * DELETE /api/logs — 清空日志缓冲区 + 文件
    */
   router.delete('/', (req, res) => {
     logger.clearBuffer();
     logger.info({ message: 'cleared', type: 11, data: { op: 1 } });
+    res.json({ success: true });
+  });
+
+  /**
+   * DELETE /api/logs/display — 仅清空内存缓冲区，保留日志文件
+   */
+  router.delete('/display', (req, res) => {
+    logger.clearRingBuffer();
+    logger.info({ message: 'display cleared', type: 11, data: { op: 2 } });
     res.json({ success: true });
   });
 

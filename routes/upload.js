@@ -22,7 +22,12 @@ function createUploadRouter(config) {
   const storage = multer.diskStorage({
     destination: (req, file, cb) => {
       const userPath = req.body.targetPath || '/';
-      const resolved = resolveSafePath(userPath, config.roots);
+      const rootIndex = parseInt(req.body.root);
+      if (isNaN(rootIndex) || !config.roots[rootIndex]) {
+        logger.warn(`[上传] 无效根目录索引: root=${req.body.root}, roots=${config.roots.length}`);
+        return cb(new Error('无效的根目录'), null);
+      }
+      const resolved = resolveSafePath(userPath, [config.roots[rootIndex]]);
       if (!resolved.valid) {
         return cb(new Error('Access denied'), null);
       }
@@ -68,7 +73,12 @@ function createUploadRouter(config) {
 
   router.post('/check', (req, res) => {
     const userPath = req.body.targetPath || '/';
-    const resolved = resolveSafePath(userPath, config.roots);
+    const rootIndex = parseInt(req.body.root);
+    if (isNaN(rootIndex) || !config.roots[rootIndex]) {
+      logger.warn(`[上传检测] 无效根目录索引: root=${req.body.root}, roots=${config.roots.length}`);
+      return res.status(400).json({ error: '无效的根目录' });
+    }
+    const resolved = resolveSafePath(userPath, [config.roots[rootIndex]]);
     if (!resolved.valid) return res.status(403).json({ error: resolved.error });
     const names = req.body.names || [];
     const conflicts = names.filter(n => fs.existsSync(path.join(resolved.absolutePath, n)));

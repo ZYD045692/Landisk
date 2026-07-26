@@ -10,11 +10,13 @@ function createFilesRouter(config) {
   router.get('/', async (req, res) => {
     const userPath = req.query.path || '/';
 
-    // 选择活跃根目录：root 参数指定索引，默认第一个
+    // 选择活跃根目录：root 参数指定索引
     const rootIndex = parseInt(req.query.root);
-    const activeRoots = (!isNaN(rootIndex) && config.roots[rootIndex])
-      ? [config.roots[rootIndex]]
-      : config.roots;
+    if (isNaN(rootIndex) || !config.roots[rootIndex]) {
+      logger.warn(`[浏览] 无效根目录索引: root=${req.query.root}, roots=${config.roots.length}`);
+      return res.status(400).json({ error: '无效的根目录' });
+    }
+    const activeRoots = [config.roots[rootIndex]];
 
     if (activeRoots.length === 0) {
       return res.json({ currentPath: '/', isDirectory: true, entries: [] });
@@ -95,8 +97,12 @@ function createFilesRouter(config) {
     const userPath = req.body.path;
     if (!userPath) return res.status(400).json({ error: 'Missing path' });
 
-    const activeRoots = config.roots && config.roots.length > 0 ? config.roots : [];
-    if (activeRoots.length === 0) return res.status(400).json({ error: '请先添加共享目录' });
+    const rootIndex = parseInt(req.body.root);
+    if (isNaN(rootIndex) || !config.roots[rootIndex]) {
+      logger.warn(`[打开] 无效根目录索引: root=${req.body.root}, roots=${config.roots.length}`);
+      return res.status(400).json({ error: '无效的根目录' });
+    }
+    const activeRoots = [config.roots[rootIndex]];
 
     const resolved = resolveSafePath(userPath, activeRoots);
     if (!resolved.valid) return res.status(403).json({ error: resolved.error });

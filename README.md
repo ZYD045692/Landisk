@@ -1,6 +1,6 @@
 # LanDisk
 
-局域网文件快传 — 电脑手机在同一 WiFi 下，扫码即连，拖拽传文件。
+局域网文件快传 — 电脑手机在同一局域网下，扫码即连，拖拽传文件。
 
 无需数据线、无需登录、无需安装 App。
 
@@ -50,11 +50,17 @@ PC 和手机访问的是同一个 Express 服务，前端只存一份。
 - 中文文件名上传不乱码
 - 可执行扩展名上传阻断（.exe .bat .cmd .ps1 等）
 - PC / 手机同源访问，纯本地无联网
+- 无共享目录时智能提示引导添加
+- 移除共享目录时自动清理 URL 查询参数
+- 路径不存在时自动重定向首页
+- 服务端路径归一化（`fs.realpathSync.native`），杜绝 Windows 盘符大小写导致重复根目录
 
 ## 安装使用
 
+当前版本：**v0.1.0**
+
 1. 安装 [Node.js](https://nodejs.org) ≥ 18
-2. 运行 `LanDisk_0.1.0_x64-setup.exe`
+2. 运行 `LanDisk_*_x64-setup.exe`（从 [`dist/`](dist/) 获取）
 3. 右上角 ⚙ 添加共享目录
 4. 点 📱 获取二维码，手机扫码访问
 
@@ -67,7 +73,7 @@ PC 和手机访问的是同一个 Express 服务，前端只存一份。
 
 ## 注意事项
 
-- 电脑手机需在同一 WiFi
+- 设备需在同一局域网
 - 首次启动 Windows 防火墙会弹窗，**必须允许** Node.js
 - 端口 `22580`，如冲突修改 `%USERPROFILE%\.landisk\config.json`
 
@@ -91,6 +97,35 @@ npx tauri build        # 生成 NSIS 安装包
 ```
 
 产物：`src-tauri/target/release/bundle/nsis/LanDisk_0.1.0_x64-setup.exe`
+
+### 测试
+
+```bash
+node test/setup.js            # 创建测试数据
+node test/test-api.js         # API 测试（23项）
+node test/setup.js            # 重建测试数据
+node test/test-crawl.js       # 爬虫测试（15项）
+```
+
+| 脚本 | 说明 |
+|---|---|
+| `test/verify.js` | 文件系统验证工具（dirExists, fileExists, filesMatch, fileIs, checkConfigRoots 等） |
+| `test/setup.js` | 创建 testdir/{testdira/testa, testdirb/testb, tmp} |
+| `test/verify-clean.js` | 删除 testdir/ + config 残留检查 |
+| `test/test-api.js` | API 测试（23 项），verify.js 断言 |
+| `test/test-crawl.js` | 爬虫测试（15 项），纯 UI 操作 |
+
+### 打包体积
+
+前端采用 Element Plus 按需自动引入（`unplugin-auto-import` + `unplugin-vue-components`），移除全局注册，大幅缩减 JS 体积：
+
+| 指标 | 优化前 | 优化后 | 减幅 |
+|---|---|---|---|
+| JS 原始 | 1,246 KB | **546 KB** | **-56%** |
+| JS gzip | 397 KB | **186 KB** | **-53%** |
+| CSS | 368 KB | 368 KB | 不变 |
+
+安装包（NSIS）**4.0 MB**，含 Rust 二进制 + Node.js 运行时 + 前端页面。
 
 ## 项目结构
 

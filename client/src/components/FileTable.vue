@@ -198,10 +198,14 @@ import { getDownloadUrl, deleteFile, batchDownloadLog, batchDeleteLog } from '..
 
 async function openFileRow(path) {
   try {
+    const body = { path }
+    if (props.rootIndex !== undefined && props.rootIndex !== null) {
+      body.root = props.rootIndex
+    }
     const res = await fetch('/api/files/open', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ path })
+      body: JSON.stringify(body)
     })
     const data = await res.json()
     if (!data.success) throw new Error(data.error || '未知错误')
@@ -321,7 +325,7 @@ async function batchDelete() {
       selected.value.map(async row => {
         const filePath = (props.currentPath === '/' ? '' : props.currentPath) + '/' + row.name
         try {
-          const res = await deleteFile(filePath)
+          const res = await deleteFile(filePath, props.rootIndex)
           return { name: row.name, dest: res.data.dest || 'trash' }
         } catch { return { name: row.name, dest: null } }
         finally { completed++; deleteProgress.value = Math.round((completed / count) * 100) }
@@ -377,7 +381,7 @@ async function confirmDelete(row) {
       { confirmButtonText: '删除', cancelButtonText: '取消', type: 'warning', confirmButtonClass: 'el-button--danger' }
     )
     const filePath = (props.currentPath === '/' ? '' : props.currentPath) + '/' + row.name
-    const res = await deleteFile(filePath)
+    const res = await deleteFile(filePath, props.rootIndex)
     ElMessage.success(res.data.dest === 'permanent' ? '已永久删除（回收站不可用）' : '已移入回收站')
     emit('deleted')
   } catch { /* cancelled */ }
@@ -407,7 +411,7 @@ function handleRowClick(row) {
   border-radius: 8px;
   border: 1px solid #ebeef5;
   overflow: hidden;
-  scrollbar-gutter: stable;
+  /* scrollbar-gutter: stable; */
   position: relative;
 }
 

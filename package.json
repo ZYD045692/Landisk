@@ -11,7 +11,8 @@
     "build": "cd client && npm run build",
     "build:server": "npm --prefix client run build && node scripts/bundle-server.js",
     "prebuild": "npm run build:server",
-    "tauri": "npx tauri"
+    "tauri": "npx tauri",
+    "build:tauri": "npm run build:server && npx tauri build && node scripts/copy-installer.js"
   },
   "dependencies": {
     "@tauri-apps/plugin-shell": "^2.3.5",

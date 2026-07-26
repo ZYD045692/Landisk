@@ -136,6 +136,11 @@ app.post('/api/roots', (req, res) => {
 
   const absPath = path.resolve(inputPath.trim());
 
+  // Windows 盘符大小写统一（D: / d:）
+  const normalizedPath = (() => {
+    try { return fs.realpathSync.native(absPath); } catch { return absPath; }
+  })();
+
   // 校验存在性
   let stat;
   try {
@@ -147,24 +152,24 @@ app.post('/api/roots', (req, res) => {
     return res.status(400).json({ error: '路径不是目录' });
   }
 
-  // 去重
-  if (config.roots.some(r => r === absPath)) {
+  // 去重（归一化后的路径比较）
+  if (config.roots.some(r => r === normalizedPath)) {
     return res.status(400).json({ error: '该目录已在共享列表中' });
   }
 
   // 防嵌套：新目录不能在已有根目录下
   for (const r of config.roots) {
-    if (absPath.startsWith(r + path.sep) || absPath === r) {
+    if (normalizedPath.startsWith(r + path.sep) || normalizedPath === r) {
       return res.status(400).json({ error: `该目录已在 "${path.basename(r)}" 的共享范围内` });
     }
   }
 
-  config.roots.push(absPath);
+  config.roots.push(normalizedPath);
   try { saveConfig(); } catch (err) {
     return res.status(500).json({ error: '保存配置失败: ' + err.message });
   }
 
-  logger.info({ message: absPath, type: 7, data: { op: 1, dir: absPath } });
+  logger.info({ message: normalizedPath, type: 7, data: { op: 1, dir: normalizedPath } });
   res.json({
     roots: config.roots.map(r => ({
       name: path.basename(r),

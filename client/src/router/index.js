@@ -6,6 +6,10 @@ const routes = [
     path: '/',
     name: 'FileBrowser',
     component: FileBrowser
+  },
+  {
+    path: '/:pathMatch(.*)*',
+    redirect: '/'
   }
 ]
 

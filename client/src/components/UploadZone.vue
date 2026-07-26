@@ -64,7 +64,8 @@ import { Plus } from '@element-plus/icons-vue'
 import { checkConflicts } from '../api'
 
 const props = defineProps({
-  uploadPath: { type: String, default: '/' }
+  uploadPath: { type: String, default: '/' },
+  rootIndex: { type: Number, default: undefined }
 })
 
 const emit = defineEmits(['uploaded'])
@@ -124,7 +125,7 @@ async function uploadFiles(fileList) {
     let replaceList = []
     let skipList = []
     try {
-      const res = await checkConflicts(props.uploadPath, names)
+      const res = await checkConflicts(props.uploadPath, names, props.rootIndex)
       const conflicts = res.data.conflicts || []
       if (conflicts.length > 0) {
         uploading.value = false  // 显示弹窗前关闭进度条
@@ -152,6 +153,9 @@ async function uploadFiles(fileList) {
     // === Phase 2: 上传 ===
     const formData = new FormData()
     formData.append('targetPath', props.uploadPath)
+    if (props.rootIndex !== undefined && props.rootIndex !== null) {
+      formData.append('root', props.rootIndex)
+    }
     // replace 必须在 files 之前，multer 按顺序解析
     formData.append('replace', replaceList.join(','))
     let count = 0

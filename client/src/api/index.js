@@ -41,8 +41,12 @@ export function getDownloadUrl(filePath, rootIndex) {
  * 删除文件或目录
  * @param {string} filePath - 文件路径
  */
-export function deleteFile(filePath) {
-  return api.delete('/delete', { params: { path: filePath } })
+export function deleteFile(filePath, rootIndex) {
+  const params = { path: filePath }
+  if (rootIndex !== undefined && rootIndex !== null) {
+    params.root = rootIndex
+  }
+  return api.delete('/delete', { params })
 }
 
 /**
@@ -64,8 +68,12 @@ export function removeRoot(dirPath) {
 /**
  * 检查上传文件冲突
  */
-export function checkConflicts(targetPath, names) {
-  return api.post('/upload/check', { targetPath, names })
+export function checkConflicts(targetPath, names, rootIndex) {
+  const body = { targetPath, names }
+  if (rootIndex !== undefined && rootIndex !== null) {
+    body.root = rootIndex
+  }
+  return api.post('/upload/check', body)
 }
 
 /**
@@ -78,6 +86,10 @@ export function fetchLogs(lines = 200) {
 
 export function clearLogs() {
   return api.delete('/logs')
+}
+
+export function clearLogDisplay() {
+  return api.delete('/logs/display')
 }
 
 /**

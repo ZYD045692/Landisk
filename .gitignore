@@ -2,3 +2,6 @@ node_modules
 server-dist
 client/dist
 src-tauri/target
+dist/
+stats.html
+test/*-results.md

@@ -217,6 +217,11 @@ function getBuffer(lines = 200, options = {}) {
   return result.slice(-lines);
 }
 
+/** 仅清空内存环形缓冲区（保留日志文件） */
+function clearRingBuffer() {
+  ringBuffer.length = 0;
+}
+
 /** 清空内存环形缓冲区 + 日志文件 */
 function clearBuffer() {
   ringBuffer.length = 0;
@@ -235,6 +240,7 @@ module.exports = {
   getLogPath: () => _logFilePath,
   getLogDir: () => _logDir,
   getBuffer,
+  clearRingBuffer,
   clearBuffer,
   onLog,
   offLog

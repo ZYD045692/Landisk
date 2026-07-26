@@ -90,10 +90,12 @@ export function parseLog(entry) {
     case 9:
       return { summary: { op: `[${tn}]`, text: d.desc } }
     case 10:
+      if (d.op === 2) return { summary: { op: `[${tn}]`, text: `切换 → ${d.dir}` } }
       if (d.error) return { summary: { op: `[${tn}]`, text: `${d.dir} — ${d.error}` } }
       return { summary: { op: `[${tn}]`, text: d.dir } }
     case 11:
       if (d.op === 1) return { summary: { op: `[${tn}]`, text: '已清空' } }
+      if (d.op === 2) return { summary: { op: `[${tn}]`, text: '缓冲区已清空' } }
       return { summary: { op: `[${tn}]`, text: '' } }
     case 12:
       return { summary: { op: `[${tn}]`, text: d.error || '' } }

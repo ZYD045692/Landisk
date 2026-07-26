@@ -28,7 +28,12 @@ function createDeleteRouter(config) {
       return res.status(400).json({ error: '请先添加共享目录' });
     }
 
-    const resolved = resolveSafePath(userPath, config.roots);
+    const rootIdx = parseInt(req.query.root);
+    if (isNaN(rootIdx) || !config.roots[rootIdx]) {
+      logger.warn(`[删除] 无效根目录索引: root=${req.query.root}, roots=${config.roots.length}`);
+      return res.status(400).json({ error: '无效的根目录' });
+    }
+    const resolved = resolveSafePath(userPath, [config.roots[rootIdx]]);
     if (!resolved.valid) {
       return res.status(403).json({ error: resolved.error });
     }

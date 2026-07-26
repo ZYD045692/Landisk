@@ -1,19 +1,22 @@
 {
   "permissions": {
     "allow": [
-      "Bash(curl -s 'http://localhost:5173/src/views/FileBrowser.vue')",
-      "Bash(npx vite *)",
-      "Bash(cp \"C:\\\\Users\\\\SURPER~1\\\\AppData\\\\Local\\\\Temp\\\\screenshot-1784754973609.png\" \"d:\\\\Desktop\\\\transfer\\\\images\\\\03-log-viewer.png\")",
-      "Bash(cp \"C:\\\\Users\\\\SURPER~1\\\\AppData\\\\Local\\\\Temp\\\\screenshot-1784755710148.png\" \"d:\\\\Desktop\\\\transfer\\\\images\\\\01-file-browser.png\")",
-      "Bash(cp \"C:\\\\Users\\\\SURPER~1\\\\AppData\\\\Local\\\\Temp\\\\screenshot-1784755808197.png\" \"d:\\\\Desktop\\\\transfer\\\\images\\\\02-batch-select.png\" && node \"C:\\\\Users\\\\Surperman\\\\.claude\\\\skills\\\\browser\\\\scripts\\\\eval.cjs\" 'document.querySelector\\(\".batch-bar .el-button:last-child\"\\)?.click\\(\\); \"deselected\"')",
-      "Bash(cp \"C:\\\\Users\\\\SURPER~1\\\\AppData\\\\Local\\\\Temp\\\\screenshot-1784755900162.png\" \"d:\\\\Desktop\\\\transfer\\\\images\\\\03-settings.png\" && node \"C:\\\\Users\\\\Surperman\\\\.claude\\\\skills\\\\browser\\\\scripts\\\\eval.cjs\" 'document.querySelector\\(\".el-dialog__headerbtn\"\\)?.click\\(\\); \"closed\"')",
-      "Bash(cp \"C:\\\\Users\\\\SURPER~1\\\\AppData\\\\Local\\\\Temp\\\\screenshot-1784755972029.png\" \"d:\\\\Desktop\\\\transfer\\\\images\\\\04-log-viewer.png\" && node \"C:\\\\Users\\\\Surperman\\\\.claude\\\\skills\\\\browser\\\\scripts\\\\eval.cjs\" 'document.querySelector\\(\".el-dialog__headerbtn\"\\)?.click\\(\\); \"closed\"')",
-      "Bash(cp \"C:\\\\Users\\\\SURPER~1\\\\AppData\\\\Local\\\\Temp\\\\screenshot-1784756016868.png\" \"d:\\\\Desktop\\\\transfer\\\\images\\\\05-qr-code.png\" && node \"C:\\\\Users\\\\Surperman\\\\.claude\\\\skills\\\\browser\\\\scripts\\\\eval.cjs\" 'document.querySelector\\(\".el-dialog__headerbtn\"\\)?.click\\(\\); \"closed\"')",
-      "Bash(cp \"C:\\\\Users\\\\SURPER~1\\\\AppData\\\\Local\\\\Temp\\\\screenshot-1784756173387.png\" \"d:\\\\Desktop\\\\transfer\\\\images\\\\06-drag-overlay.png\" && node \"C:\\\\Users\\\\Surperman\\\\.claude\\\\skills\\\\browser\\\\scripts\\\\eval.cjs\" 'document.querySelector\\(\".app-container\"\\)?.classList.remove\\(\"global-dragover\"\\); \"cleaned\"')",
-      "Bash(npx tauri *)"
-    ],
-    "additionalDirectories": [
-      "C:\\Users\\SURPER~1\\AppData\\Local\\Temp"
+      "Bash(/d/platform-tools/adb pull *)",
+      "Bash(adb connect *)",
+      "Bash(adb devices *)",
+      "Read(//mnt/c/**)",
+      "Read(//mnt/**)",
+      "Bash(/d/platform-tools/adb devices *)",
+      "Bash(git init **)",
+      "Bash(git add **)",
+      "Bash(curl -sL **)",
+      "Bash(git config **)",
+      "Bash(git commit **)",
+      "Bash(curl -sL ** | **)",
+      "Bash(git ** | **)",
+      "Bash(node test/test-api.js)",
+      "Bash(\"C:\\\\Program Files\\\\Google\\\\Chrome Dev\\\\Application\\\\chrome.exe\" --remote-debugging-port=9222 --user-data-dir=\"C:\\\\Users\\\\Surperman\\\\.claude\\\\chrome-debug\" --app=http://localhost:22580 --window-size=900,640)",
+      "Bash(\"C:\\\\Program Files\\\\Google\\\\Chrome Dev\\\\Application\\\\chrome.exe\" --remote-debugging-port=9222 --user-data-dir=\"C:\\\\Users\\\\Surperman\\\\.claude\\\\chrome-debug\" --start-maximized about:blank)"
     ]
   }
 }
