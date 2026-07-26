@@ -1,0 +1,41 @@
+{
+  "permissions": {
+    "allow": [
+      "WebSearch",
+      "PowerShell(Get-Content -Path \"$env:USERPROFILE\\\\.claude\\\\projects\\\\d--Desktop-Castle-Clashers\\\\90e23ee0-08a4-498b-a15c-b9cfb2721372.jsonl\" -Tail 10 -Encoding UTF8 | ForEach-Object { try { $obj = $_ | ConvertFrom-Json; if \\($obj.type -eq 'user' -or $obj.type -eq 'assistant'\\) { $msgType = if \\($obj.type -eq 'user'\\) { '🧑 ' } else { '🤖 ' }; $text = ''; if \\($obj.message.content -is [array]\\) { $text = \\($obj.message.content | Where-Object { $_.type -eq 'text' } | ForEach-Object { $_.text }\\) -join ' ' } else { $text = $obj.message.content }; \"$msgType [$\\($obj.timestamp\\)]`n$text`n\" } } catch { } } -ErrorAction SilentlyContinue)",
+      "Bash(/d/platform-tools/adb -s 127.0.0.1:5555 pull //sdcard/Download/marked_screenshot.png \"d:/Desktop/CastleClashers/images/\")",
+      "Bash(cmd.exe /c \"d:\\\\Desktop\\\\CastleClashers\\\\pull-testres.bat\")",
+      "Bash(dir \"d:/Desktop/CastleClashers/testres/\")",
+      "Bash(cmd.exe /c \"d:\\\\platform-tools\\\\adb.exe devices\")",
+      "Bash(/d/platform-tools/adb -s 127.0.0.1:5555 pull \"//storage/emulated/0/scripts/.remote/LAPTOP-IC43PJTC/CastleClashers/testres/\" \"d:/Desktop/CastleClashers/testres/\")",
+      "Bash(cmd.exe /c \"d:\\\\platform-tools\\\\adb.exe -s 127.0.0.1:5555 get-state\")",
+      "PowerShell(d:\\\\platform-tools\\\\adb.exe -s 127.0.0.1:5555 get-state)",
+      "PowerShell(Start-Process -NoNewWindow cmd.exe -ArgumentList \"/c\", \"d:\\\\Desktop\\\\CastleClashers\\\\pull-testres.bat\" -RedirectStandardOutput \"d:\\\\Desktop\\\\CastleClashers\\\\testres\\\\bat_log.txt\" -RedirectStandardError \"d:\\\\Desktop\\\\CastleClashers\\\\testres\\\\bat_err.txt\")",
+      "PowerShell(d:\\\\Desktop\\\\CastleClashers\\\\pull-testres.bat)",
+      "Bash(git init *)",
+      "Bash(git add *)",
+      "Bash(curl -sL *)",
+      "Bash(git config *)",
+      "Bash(git commit *)",
+      "Bash(python3 -c \"import sys,json; d=json.load\\(sys.stdin\\); print\\(json.dumps\\(list\\(d.keys\\(\\)\\)[:30], indent=2\\)\\); print\\('---'\\); [print\\(k, type\\(d[k]\\).__name__\\) for k in list\\(d.keys\\(\\)\\)[:20]]\")",
+      "PowerShell(Get-Content \"C:\\\\Users\\\\Surperman\\\\.claude\\\\projects\\\\D--Desktop-AlphaGuard\\\\3c378eb0-7801-41c4-8dfe-0c2e3fbf0d8b.jsonl\" | ForEach-Object -Begin { $i = 0 } -Process { $i++; $d = $_ | ConvertFrom-Json; if \\(-not $d.isMeta -and $d.type -eq 'message' -and $d.subtype -in @\\('user','assistant','text'\\)\\) {  Write-Output \\(\"[$i][$\\($d.subtype\\)] \" + $d.content.Substring\\(0, [Math]::Min\\(200, $d.content.Length\\)\\)\\) } } | Select-Object -First 100)",
+      "Bash(python3 *)",
+      "Bash(grep -oE '阅读须知.{0,200}')",
+      "mcp__playwright__browser_navigate",
+      "Bash(grep -oE '>[^<]{10,}<')",
+      "Bash(grep -oP '.{0,300}阅读须知.{0,300}')",
+      "Bash(grep -oE '.{0,200}阅读须知.{0,200}')",
+      "Bash(grep -oE '.{0,100}阅读须知.{0,300}')",
+      "Bash(node \"C:\\\\Users\\\\Surperman\\\\.claude\\\\skills\\\\browser\\\\scripts\\\\screenshot.cjs\")",
+      "Bash(cp \"C:\\\\Users\\\\SURPER~1\\\\AppData\\\\Local\\\\Temp\\\\screenshot-1785075132734.png\" \"d:\\\\Desktop\\\\transfer\\\\images\\\\01-file-browser.png\")",
+      "Bash(node test/test-api.js)",
+      "Bash(node \"C:\\\\Users\\\\Surperman\\\\.claude\\\\skills\\\\browser\\\\scripts\\\\start.cjs\" --profile)",
+      "Bash(cmd //c \"mkdir D:\\\\Desktop\\\\kaoyan\\\\screenshot_test 2>nul && echo 截图测试文件1 > D:\\\\Desktop\\\\kaoyan\\\\screenshot_test\\\\demo.txt && echo PDF内容示例 > D:\\\\Desktop\\\\kaoyan\\\\screenshot_test\\\\report.pdf\")",
+      "Bash(node test/test-crawl.js)",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\" http://localhost:22580/api/roots)"
+    ],
+    "additionalDirectories": [
+      "C:\\Users\\SURPER~1\\AppData\\Local\\Temp"
+    ]
+  }
+}
