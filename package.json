@@ -1,6 +1,6 @@
 {
   "name": "landisk",
-  "version": "1.0.0",
+  "version": "0.1.1",
   "description": "LanDisk - 内网文件服务器",
   "main": "server.js",
   "scripts": {
