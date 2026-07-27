@@ -1,7 +1,18 @@
 /**
  * 打包服务端文件到 server-dist/，供 Tauri resources 捆绑
  * 只复制生产依赖（不含 devDependencies）
+ *
+ * 排除列表：包在 server-dist/node_modules/ 中存在但 Express 运行时不需要的依赖。
+ * 当前排除：
+ *   - yargs 及其 CLI 子依赖 — qrcode 的 CLI 工具需要，但程序 API 不用
  */
+const EXCLUDED_PACKAGES = new Set([
+  'yargs', 'yargs-parser', 'y18n', 'cliui', 'camelcase',
+  'decamelize', 'find-up', 'locate-path', 'p-locate', 'p-limit',
+  'path-exists', 'which-module', 'require-directory',
+  'require-main-filename', 'get-caller-file', 'set-blocking',
+]);
+
 const fs = require('fs');
 const path = require('path');
 
@@ -57,6 +68,12 @@ const copied = new Set();
 while (queue.length > 0) {
   const name = queue.shift();
   if (copied.has(name)) continue;
+
+  // 跳过排除列表中的包（Express 运行时不需要）
+  if (EXCLUDED_PACKAGES.has(name)) {
+    copied.add(name);
+    continue;
+  }
 
   const srcDir = path.join(ROOT, 'node_modules', name);
   if (!fs.existsSync(srcDir)) {

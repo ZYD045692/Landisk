@@ -1,5 +1,5 @@
 <template>
-  <el-dialog v-model="showLogs" width="750px" top="5vh" destroy-on-close @close="onLogsClose" append-to-body>
+  <el-dialog v-model="showLogs" width="750px" top="10vh" destroy-on-close @close="onLogsClose" append-to-body>
     <template #title><div style="display:flex;align-items:center;gap:6px;font-size:18px"><svg viewBox="0 0 1024 1024" width="18" height="18" fill="#000"><path d="M608.402286 325.924571H302.592c-25.6 0-46.592 19.163429-46.592 42.642286 0 23.478857 20.992 42.715429 46.592 42.715429h305.883429c25.6 0 46.518857-19.236571 46.518857-42.715429 0-23.405714-20.918857-42.642286-46.592-42.642286z m-119.588572 420.278858H302.592c-25.6 0-46.592 19.236571-46.592 42.715428 0 23.405714 20.992 42.642286 46.592 42.642286h186.221714c25.6 0 46.592-19.236571 46.592-42.642286 0-23.478857-20.992-42.715429-46.592-42.715428zM675.108571 536.649143H302.592c-25.6 0-46.592 19.163429-46.592 42.642286 0 23.478857 20.992 42.642286 46.592 42.642285H675.108571c25.6 0 46.518857-19.163429 46.518858-42.642285 0-23.405714-20.918857-42.642286-46.518858-42.642286z m235.52 350.281143c0 21.284571-24.649143 44.470857-45.714285 44.470857H159.305143c-21.211429 0-45.056-23.186286-45.056-44.470857V215.332571c0-21.284571 23.844571-44.617143 45.056-44.617142H256.731429v37.741714c0 26.038857 21.138286 47.323429 46.957714 47.323428a47.323429 47.323429 0 0 0 47.030857-47.323428v-37.741714h324.022857v37.741714c0 26.038857 21.211429 47.323429 47.104 47.323428a47.323429 47.323429 0 0 0 46.957714-47.323428v-37.741714h96.036572c21.211429 0 45.714286 23.405714 45.714286 44.617142v671.597715zM855.552 78.262857h-86.674286V47.542857A47.323429 47.323429 0 0 0 721.92 0.073143a47.323429 47.323429 0 0 0-47.030857 47.323428v30.793143h-324.022857V47.542857a47.323429 47.323429 0 0 0-47.104-47.396571 47.323429 47.323429 0 0 0-46.957715 47.323428v30.793143H168.667429c-78.848 0-145.554286 67.145143-145.554286 146.578286v652.653714c0 79.36 66.706286 146.505143 145.554286 146.505143h686.811428c78.921143 0 145.554286-67.145143 145.554286-146.505143V224.841143c0-79.433143-66.633143-146.578286-145.554286-146.578286z"></path></svg><span>服务器日志</span></div></template>
     <div class="logs-body">
       <div class="logs-toolbar">
@@ -20,7 +20,7 @@
         <div v-else-if="filteredLogs.length === 0" class="logs-status">暂无日志</div>
         <template v-else>
           <div v-for="(entry, i) in filteredLogs" :key="i" class="log-entry">
-            <span class="log-ts">{{ entry.timestamp }}</span>
+            <span class="log-ts"><span class="ts-date">{{ tsDate(entry.timestamp) }}</span><span class="ts-time">{{ tsTime(entry.timestamp) }}</span><span class="ts-sec">{{ tsSec(entry.timestamp) }}</span></span>
             <span class="log-level" :class="'log-level-' + entry.level.toLowerCase()">{{ entry.level }}</span>
             <div class="log-msg">
               <template v-if="showSummary(entry)">
@@ -72,6 +72,11 @@ const logLevelFilter = ref('')
 const logsListRef = ref(null)
 const logsAtBottom = ref(true)
 let eventSource = null
+
+function tsDate(ts) { return ts ? ts.substring(0, 10) + ' ' : '' }
+
+function tsTime(ts) { return ts ? ts.substring(11, 16) : '' }
+function tsSec(ts) { return ts ? ts.substring(16, 19) : '' }
 
 const filteredLogs = computed(() => {
   let result = logEntries.value
@@ -251,4 +256,18 @@ function onLogsClose() {
 
 .fade-enter-active, .fade-leave-active { transition: opacity 0.25s; }
 .fade-enter-from, .fade-leave-to { opacity: 0; }
+
+@media (max-width: 768px) {
+  .logs-toolbar { flex-wrap: wrap; gap: 8px; }
+  .logs-toolbar .el-input { width: 100% !important; }
+  .log-level-filters { gap: 6px; }
+  .log-level-filters .el-button { font-size: 11px !important; padding: 4px 8px !important; }
+  .logs-toolbar > div:last-child { margin-left: auto; }
+  .ts-date, .ts-sec { display: none; }
+  .ts-time { font-size: 12px; }
+  .log-ts { width: auto; max-width: 80px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .log-level { width: 36px; font-size: 10px; }
+  .log-entry { gap: 4px; padding: 1px 8px; }
+  .logs-body { height: 70vh; }
+}
 </style>
