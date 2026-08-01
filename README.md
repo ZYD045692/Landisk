@@ -11,71 +11,56 @@
 │  Tauri WebView ──▶ localhost:22580 ──┤
 │  手机浏览器 ────▶ 192.168.1.x:22580 ─┤
 │                                      │
-│  Express 同时提供：                    │
+│  Rust axum 后端 (sidecar) 同时提供：    │
 │   ├─ 前端页面 (client/dist)           │
 │   └─ API (/api/*)                    │
 └──────────────────────────────────────┘
 ```
 
-PC 和手机访问的是同一个 Express 服务，前端只存一份。
+PC 和手机访问的是同一个服务。
 
 ## 功能
 
 - 文件浏览、多根目录切换、面包屑导航
 - 全局拖拽：拖文件到窗口任意位置即可上传，毛玻璃全屏提示
 - 冲突弹窗：同名文件可选替换 / 保留两份 / 取消，支持批量统一操作
-- 文件列表刷新时逐格 shimmer 加载效果，列名不受影响
-- 删除进回收站 / 永久删除（回收站不可用时自动 fallback），不丢失数据
-- 批量删除：多选 + 并行执行 + 百分比进度条，逐条实际去向记录（回收站 / 永久删除）
+- 文件列表刷新时逐格 shimmer 加载效果
+- 删除进回收站 / 永久删除（回收站不可用时自动 fallback）
+- 批量删除：多选 + 并行执行 + 百分比进度条
 - 批量下载：多选 + 逐项浏览器下载
 - 搜索：文件名过滤
-- 排序：名称 / 大小 / 时间 / 类型（后缀）
+- 排序：名称 / 大小 / 时间 / 类型
 - 分页：5 / 10 / 20 / 50 条
 - 70+ 种文件图标，彩色分类
 - 界面内嵌二维码，手机扫码即连
-- 内置日志查看器：
-  - SSE 实时推送，无需轮询
-  - 粘性底部 + 「回到底部」按钮
-  - 等级过滤（全部 / INFO / WARN / ERROR）
-  - 文本搜索过滤
-  - 清除显示 / 清除本地（清空文件+缓冲池）
-  - 结构化 JSON 日志，统一 `[操作] N 个 → 目录` 格式
-  - 文件名固定 30 显示宽度，`(大小)` 左对齐
-  - 服务重启后自动加载最后 100 条历史
+- 内置日志查看器：SSE 实时推送、等级过滤、文本搜索、清除、结构化 JSON
 - 系统托盘，关闭窗口后台运行
-- 开机自启（静默托盘，不弹窗）
+- 开机自启（静默托盘）
 - 单实例，多点图标不重复启动
-- 界面管理共享目录，持久化到 `%USERPROFILE%\.landisk\`
-- 点击文件可用系统默认程序打开（本机）
+- 界面管理共享目录，持久化到 `config.json`（默认与程序同目录，可用 `LANDISK_DATA_DIR` 指定）
+- 点击文件可用系统默认程序打开
 - 中文文件名上传不乱码
-- 可执行扩展名上传阻断（.exe .bat .cmd .ps1 等）
-- PC / 手机同源访问，纯本地无联网
 - 无共享目录时智能提示引导添加
-- 移除共享目录时自动清理 URL 查询参数
-- 路径不存在时自动重定向首页
-- 服务端路径归一化（`fs.realpathSync.native`），杜绝 Windows 盘符大小写导致重复根目录
 
 ## 安装使用
 
-当前版本：**v0.1.0**
+当前版本：**v0.1.2**
 
-1. 安装 [Node.js](https://nodejs.org) ≥ 18
-2. 运行 `LanDisk_*_x64-setup.exe`（从 [`dist/`](dist/) 获取）
-3. 右上角 ⚙ 添加共享目录
-4. 点 📱 获取二维码，手机扫码访问
+1. 运行 `LanDisk_*_x64-setup.exe`（从 [`dist/`](dist/) 获取）
+2. 右上角 ⚙ 添加共享目录
+3. 点 📱 获取二维码，手机扫码访问
 
 | 操作 | 效果 |
 |---|---|
 | 关闭窗口 | 隐藏到托盘 |
 | 双击托盘 | 显示窗口 |
-| 右键托盘 → 开机自启 | 开关开机启动 |
 | 右键托盘 → 退出 | 完全退出 |
 
 ## 注意事项
 
 - 设备需在同一局域网
-- 首次启动 Windows 防火墙会弹窗，**必须允许** Node.js
-- 端口 `22580`，如冲突修改 `%USERPROFILE%\.landisk\config.json`
+- 首次启动 Windows 防火墙会弹窗，**必须允许 LanDisk 服务访问网络**
+- 端口 `22580`
 
 ## 开发
 
@@ -85,47 +70,28 @@ npm install && cd client && npm install
 
 | 命令 | 说明 |
 |---|---|
-| `start.bat` | Tauri 桌面开发模式 |
-| `start-dev.bat` | 浏览器开发 (:5173) |
-| `start-cli.bat` | 仅后端 (:22580) |
+| `npm start` | Tauri 桌面开发模式 |
+| `start-dev.bat` | 一键调试（杀旧进程 → 构建前端 → Tauri + Vite） |
+| `npm run server` | Rust 后端直启 (:22580) |
+| `npm run dev` | cargo watch 自动重编译 |
 
 ### 构建
 
 ```bash
-npm run build:server   # 构建前端 + 打包服务端到 server-dist/
-npx tauri build        # 生成 NSIS 安装包
+npm run build:tauri   # 一键构建安装包
 ```
 
-产物：`src-tauri/target/release/bundle/nsis/LanDisk_0.1.0_x64-setup.exe`
+产物：`dist/LanDisk_0.1.2_x64-setup.exe`
 
 ### 测试
 
 ```bash
 node test/setup.js            # 创建测试数据
-node test/test-api.js         # API 测试（23项）
+node test/test-api.js         # API 测试（52项）
 node test/setup.js            # 重建测试数据
-node test/test-crawl.js       # 爬虫测试（15项）
+node test/test-crawl.js       # 爬虫测试（22项）
+node -r ./test/cdp-wrapper.js test/capture-screens.js  # 生成文档截图到 images/
 ```
-
-| 脚本 | 说明 |
-|---|---|
-| `test/verify.js` | 文件系统验证工具（dirExists, fileExists, filesMatch, fileIs, checkConfigRoots 等） |
-| `test/setup.js` | 创建 testdir/{testdira/testa, testdirb/testb, tmp} |
-| `test/verify-clean.js` | 删除 testdir/ + config 残留检查 |
-| `test/test-api.js` | API 测试（23 项），verify.js 断言 |
-| `test/test-crawl.js` | 爬虫测试（15 项），纯 UI 操作 |
-
-### 打包体积
-
-前端采用 Element Plus 按需自动引入（`unplugin-auto-import` + `unplugin-vue-components`），移除全局注册，大幅缩减 JS 体积：
-
-| 指标 | 优化前 | 优化后 | 减幅 |
-|---|---|---|---|
-| JS 原始 | 1,246 KB | **546 KB** | **-56%** |
-| JS gzip | 397 KB | **186 KB** | **-53%** |
-| CSS | 368 KB | 368 KB | 不变 |
-
-安装包（NSIS）**4.0 MB**，含 Rust 二进制 + Node.js 运行时 + 前端页面。
 
 ## 项目结构
 
@@ -136,24 +102,19 @@ node test/test-crawl.js       # 爬虫测试（15项）
 │       ├── components/  # FileTable, UploadZone, LogViewer, SettingsDialog
 │       ├── utils/       # format.js (图标/大小/日期), logFormat.js (日志解析)
 │       └── views/       # FileBrowser.vue
-├── routes/              # Express API
-│   ├── files.js         # 目录列表
-│   ├── upload.js        # 上传（去重+阻断）
-│   ├── download.js      # 文件下载 + 批量下载
-│   ├── delete.js        # 删除（回收站/永久）
-│   ├── logs.js          # 日志读取/清空/SSE 推流
-│   └── roots.js         # 根目录管理
-├── utils/
-│   └── logger.js        # 环形缓冲区(100条) + 文件写入 + SSE 事件推送
+├── src-tauri/           # Tauri + Rust 后端
+│   ├── src/
+│   │   └── lib.rs       # 窗口/托盘/sidecar 管理
+│   └── server/src/
+│       ├── main.rs      # axum 路由 + 所有 handler
+│       ├── config.rs    # 配置加载
+│       ├── logger/      # 环形缓冲区 + 文件轮转 + SSE
+│       └── middleware/  # 路径穿越防护
 ├── scripts/
-│   └── bundle-server.js # 打包服务端+前端到 server-dist/
-├── src-tauri/           # Tauri Rust
-│   └── src/
-│       ├── main.rs
-│       └── lib.rs       # 窗口/托盘/Express 管理
-├── server.js            # Express 入口
-├── config.json          # 默认配置
-└── start.bat            # 开发启动
+│   ├── build-sidecar.js # 编译 Rust 后端 sidecar
+│   └── copy-installer.js# 复制安装包到 dist/
+├── dev-data/            # 开发调试数据目录（LANDISK_DATA_DIR）
+└── start-dev.bat        # 调试启动
 ```
 
 ## 技术栈
@@ -161,8 +122,8 @@ node test/test-crawl.js       # 爬虫测试（15项）
 | 层 | 技术 |
 |---|---|
 | 桌面壳 | Tauri 2 (Rust) |
+| 后端 | axum (Rust) |
 | 前端 | Vue 3 + Vite + Element Plus |
-| 后端 | Express (Node.js) |
 | 打包 | NSIS |
 
 ## 配置
@@ -173,9 +134,9 @@ node test/test-crawl.js       # 爬虫测试（15项）
 {
   "roots": ["D:/Desktop"],
   "port": 22580,
-  "maxFileSizeMB": 500,
-  "showHiddenFiles": false
+  "max_file_size_mb": 500,
+  "show_hidden_files": false
 }
 ```
 
-共享目录也可通过界面 ⚙ 增删，自动持久化到 `%USERPROFILE%\.landisk\`。
+共享目录也可通过界面 ⚙ 增删，自动持久化到 `config.json`（默认与程序同目录，可用 `LANDISK_DATA_DIR` 环境变量指定数据目录）。

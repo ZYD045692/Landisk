@@ -1,9 +1,19 @@
 import axios from 'axios'
 
+// Tauri 壳 webview 在 tauri://localhost，API 走绝对地址；浏览器走相对路径（Vite 代理/直连）
+const apiBase = (typeof window !== 'undefined' && window.__LANDISK_PORT__)
+  ? `http://localhost:${window.__LANDISK_PORT__}/api`
+  : '/api'
+
 const api = axios.create({
-  baseURL: '/api',
+  baseURL: apiBase,
   timeout: 30000
 })
+
+/** 拼完整 API 地址（供 EventSource / XHR / fetch 等非 axios 调用使用） */
+export function apiUrl(path) {
+  return `${apiBase}${path}`
+}
 
 /**
  * 获取目录文件列表
@@ -18,9 +28,6 @@ export function fetchFiles(dirPath = '/', rootIndex) {
   return api.get('/files', { params })
 }
 
-/**
- * 获取根目录列表
- */
 export function fetchRoots() {
   return api.get('/roots')
 }
@@ -30,7 +37,7 @@ export function fetchRoots() {
  * @param {string} filePath - 文件路径
  */
 export function getDownloadUrl(filePath, rootIndex) {
-  let url = `/api/download?path=${encodeURIComponent(filePath)}`
+  let url = `${apiUrl('/download')}?path=${encodeURIComponent(filePath)}`
   if (rootIndex !== undefined && rootIndex !== null) {
     url += `&root=${rootIndex}`
   }
@@ -84,6 +91,11 @@ export function fetchLogs(lines = 200) {
   return api.get('/logs', { params: { lines } })
 }
 
+/** 打开日志目录（本机系统资源管理器） */
+export function openLogDir() {
+  return api.post('/open/logdir')
+}
+
 export function clearLogs() {
   return api.delete('/logs')
 }
@@ -108,30 +120,24 @@ export function updateConfig(data) {
 }
 
 /**
- * 记录批量下载日志
- * @param {object} data - { dir, files: [{name, size}] }
+ * 用 fetch 下载文件（支持 JSON 错误检测）
+ * @param {string} filePath - 文件路径
+ * @param {number} [rootIndex] - 根目录索引
+ * @returns {Promise<{response: Response, isJson: boolean, data: any}>}
  */
-export function batchDownloadLog(data) {
-  return api.post('/logs', {
-    level: 'info',
-    message: `${data.files.length} 个 → ${data.dir}`,
-    type: 5,
-    data: { op: 1, count: data.files.length, dir: data.dir, files: data.files }
-  })
-}
-
-/**
- * 记录批量删除日志
- * @param {object} data - { dir, files: [{name}] }
- */
-export function batchDeleteLog(data) {
-  const op = data.dest === '永久删除' ? 2 : 1
-  return api.post('/logs', {
-    level: 'info',
-    message: `${data.files.length} 个 ${data.dir} → ${data.dest}`,
-    type: 4,
-    data: { op, count: data.files.length, dir: data.dir, dest: data.dest, files: data.files }
-  })
+export async function downloadFileBlob(filePath, rootIndex) {
+  let url = `${apiUrl('/download')}?path=${encodeURIComponent(filePath)}`
+  if (rootIndex !== undefined && rootIndex !== null) {
+    url += `&root=${rootIndex}`
+  }
+  const response = await fetch(url)
+  const ct = response.headers.get('content-type') || ''
+  const isJson = ct.includes('json')
+  let data = null
+  if (isJson) {
+    data = await response.json()
+  }
+  return { response, isJson, data }
 }
 
 export default api

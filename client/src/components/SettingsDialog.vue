@@ -1,24 +1,27 @@
 <template>
-  <el-dialog v-model="showSettings" width="520px" destroy-on-close append-to-body>
-    <template #title><div style="display:flex;align-items:center;gap:6px;font-size:18px"><svg viewBox="0 0 1024 1024" width="18" height="18" fill="#000"><path d="M512.25928 704c-108.8 0-192-83.2-192-192s83.2-192 192-192 192 83.2 192 192-83.2 192-192 192z m0-320c-70.4 0-128 57.6-128 128s57.6 128 128 128 128-57.6 128-128-57.6-128-128-128z" p-id="3205"></path><path d="M640.25928 1024H384.25928c-19.2 0-32-12.8-32-32v-121.6c-25.6-12.8-51.2-25.6-70.4-38.4l-102.4 64c-12.8 6.4-32 6.4-44.8-12.8l-128-224C-6.14072 640 0.25928 620.8 19.45928 614.4l102.4-64v-76.8l-102.4-64C0.25928 403.2-6.14072 384 6.65928 364.8l128-224c6.4-12.8 25.6-19.2 44.8-6.4l102.4 64c19.2-12.8 44.8-32 70.4-38.4V32c0-19.2 12.8-32 32-32h256c19.2 0 32 12.8 32 32v121.6c25.6 12.8 51.2 25.6 70.4 38.4l102.4-64c12.8-6.4 32-6.4 44.8 12.8l128 224c12.8 19.2 6.4 38.4-12.8 44.8l-102.4 64v76.8l102.4 64c12.8 6.4 19.2 25.6 12.8 44.8l-128 224c-6.4 12.8-25.6 19.2-44.8 12.8l-102.4-64c-19.2 12.8-44.8 32-70.4 38.4V992c0 19.2-12.8 32-32 32z m-224-64h192v-108.8c0-12.8 6.4-25.6 19.2-32 32-12.8 64-32 89.6-51.2 12.8-6.4 25.6-6.4 38.4 0l96 57.6 96-166.4-96-57.6c-12.8-12.8-19.2-25.6-12.8-38.4 0-19.2 6.4-32 6.4-51.2s0-32-6.4-51.2c0-12.8 6.4-25.6 12.8-32l96-57.6-96-166.4-96 57.6c-12.8 6.4-25.6 6.4-38.4 0-25.6-19.2-57.6-38.4-89.6-51.2-12.8-12.8-19.2-25.6-19.2-38.4V64H416.25928v108.8c0 12.8-6.4 25.6-19.2 32-32 12.8-64 32-89.6 51.2-12.8 6.4-25.6 6.4-38.4 0l-96-51.2-96 166.4 96 57.6c12.8 6.4 19.2 19.2 12.8 32 0 19.2-6.4 32-6.4 51.2 0 19.2 0 32 6.4 51.2 6.4 12.8 0 25.6-12.8 32l-96 57.6 96 166.4 96-57.6c12.8-6.4 25.6-6.4 38.4 0 25.6 19.2 57.6 38.4 89.6 51.2 12.8 6.4 19.2 19.2 19.2 32V960z"></path></svg><span>设置</span></div></template>
+  <el-dialog v-model="showSettings" width="520px" destroy-on-close append-to-body :show-close="false" class="settings-dialog-wrap">
+    <template #title><div style="display:flex;align-items:center;gap:6px;font-size:18px;font-weight: 600;"><svg viewBox="0 0 1024 1024" width="18" height="18" fill="#000"><path d="M512.25928 704c-108.8 0-192-83.2-192-192s83.2-192 192-192 192 83.2 192 192-83.2 192-192 192z m0-320c-70.4 0-128 57.6-128 128s57.6 128 128 128 128-57.6 128-128-57.6-128-128-128z" p-id="3205"></path><path d="M640.25928 1024H384.25928c-19.2 0-32-12.8-32-32v-121.6c-25.6-12.8-51.2-25.6-70.4-38.4l-102.4 64c-12.8 6.4-32 6.4-44.8-12.8l-128-224C-6.14072 640 0.25928 620.8 19.45928 614.4l102.4-64v-76.8l-102.4-64C0.25928 403.2-6.14072 384 6.65928 364.8l128-224c6.4-12.8 25.6-19.2 44.8-6.4l102.4 64c19.2-12.8 44.8-32 70.4-38.4V32c0-19.2 12.8-32 32-32h256c19.2 0 32 12.8 32 32v121.6c25.6 12.8 51.2 25.6 70.4 38.4l102.4-64c12.8-6.4 32-6.4 44.8 12.8l128 224c12.8 19.2 6.4 38.4-12.8 44.8l-102.4 64v76.8l102.4 64c12.8 6.4 19.2 25.6 12.8 44.8l-128 224c-6.4 12.8-25.6 19.2-44.8 12.8l-102.4-64c-19.2 12.8-44.8 32-70.4 38.4V992c0 19.2-12.8 32-32 32z m-224-64h192v-108.8c0-12.8 6.4-25.6 19.2-32 32-12.8 64-32 89.6-51.2 12.8-6.4 25.6-6.4 38.4 0l96 57.6 96-166.4-96-57.6c-12.8-12.8-19.2-25.6-12.8-38.4 0-19.2 6.4-32 6.4-51.2s0-32-6.4-51.2c0-12.8 6.4-25.6 12.8-32l96-57.6-96-166.4-96 57.6c-12.8 6.4-25.6 6.4-38.4 0-25.6-19.2-57.6-38.4-89.6-51.2-12.8-12.8-19.2-25.6-19.2-38.4V64H416.25928v108.8c0 12.8-6.4 25.6-19.2 32-32 12.8-64 32-89.6 51.2-12.8 6.4-25.6 6.4-38.4 0l-96-51.2-96 166.4 96 57.6c12.8 6.4 19.2 19.2 12.8 32 0 19.2-6.4 32-6.4 51.2 0 19.2 0 32 6.4 51.2 6.4 12.8 0 25.6-12.8 32l-96 57.6 96 166.4 96-57.6c12.8-6.4 25.6-6.4 38.4 0 25.6 19.2 57.6 38.4 89.6 51.2 12.8 6.4 19.2 19.2 19.2 32V960z"></path></svg><span>设置</span></div></template>
     <div class="settings-body">
       <div class="settings-section">
         <div class="section-title">服务配置</div>
         <div class="setting-row">
-          <span class="setting-label">端口号</span>
-          <el-input-number v-model="configPort" :min="1" :max="65535" size="small" controls-position="right" style="width:160px" />
-        </div>
-        <div class="setting-row">
           <span class="setting-label">最大上传 (MB)</span>
-          <el-input-number v-model="configMaxSize" :min="1" :max="9999" size="small" controls-position="right" style="width:160px" />
+          <span class="setting-value" @click="openSubDialog">{{ configMaxSize }}</span>
         </div>
         <div class="setting-row">
           <span class="setting-label">显示隐藏文件</span>
-          <el-switch v-model="configShowHidden" size="small" />
+          <el-switch v-model="configShowHidden" size="large" @change="handleHiddenChanged" />
         </div>
-        <div class="setting-actions">
-          <el-button type="primary" size="small" @click="handleSaveConfig" :loading="configSaving">保存设置</el-button>
-          <span v-if="configSaved" class="success-msg">✓ 已保存</span>
+        <div v-if="isTauri()" class="setting-row">
+          <span class="setting-label">开机自启</span>
+          <el-switch v-model="autoStart" size="large" @change="handleAutoStart" />
+        </div>
+        <div class="setting-row">
+          <span class="setting-label">日志目录</span>
+          <span class="logdir-open" :title="logPath ? '点击打开：' + logPath : ''" @click="openLogDir">
+            <svg class="logdir-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 6a2 2 0 0 1 2-2h5l2 2h7a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V6z"/></svg>
+            <span>{{ logDirName || '日志文件夹' }}</span>
+          </span>
         </div>
       </div>
 
@@ -33,7 +36,7 @@
             <span class="root-name">{{ root.name }}</span>
             <span class="root-path">{{ root.path }}</span>
           </div>
-          <el-button type="danger" size="small" plain @click="handleRemoveRoot(root.path)">
+          <el-button type="danger" plain @click="handleRemoveRoot(root.path)">
             移除
           </el-button>
         </div>
@@ -44,36 +47,103 @@
             clearable
             @keyup.enter="handleAddRoot"
           />
-          <el-button type="primary" size="small" @click="handleAddRoot" :loading="adding">
+          <el-button type="primary" @click="handleAddRoot" :loading="adding">
             添加
           </el-button>
         </div>
       </div>
-      <div v-if="settingsError" class="error-msg">{{ settingsError }}</div>
     </div>
+
+    <!-- 上传设置子弹窗 -->
+    <el-dialog v-model="showSubDialog" width="360px" destroy-on-close append-to-body :show-close="false" class="sub-dialog-wrap">
+      <template #title><span class="sub-dialog-title">上传设置</span></template>
+      <div class="sub-dialog-body">
+        <div class="sub-dialog-row">
+          <span class="sub-dialog-label">最大上传 (MB)</span>
+          <el-input v-model="subDialogValue" placeholder="1-9999" @keyup.enter="handleSubSave" />
+        </div>
+      </div>
+      <template #footer>
+        <div class="sub-dialog-footer">
+          <el-button @click="showSubDialog = false">取消</el-button>
+          <el-button type="primary" @click="handleSubSave">保存</el-button>
+        </div>
+      </template>
+    </el-dialog>
   </el-dialog>
 </template>
 
 <script setup>
-import { ref, inject } from 'vue'
-// ElMessageBox 由 unplugin-auto-import 自动引入
-import { fetchRoots, addRoot, removeRoot, fetchConfig, updateConfig } from '../api'
+import { ref, computed, inject } from 'vue'
+import { fetchRoots, addRoot, removeRoot, fetchConfig, updateConfig, openLogDir as openLogDirRequest } from '../api'
+import api from '../api'
+import { isEnabled, enable, disable } from '@tauri-apps/plugin-autostart'
 
 const showSettings = ref(false)
-const configPort = ref(22580)
 const configMaxSize = ref(500)
 const configShowHidden = ref(false)
-const configSaving = ref(false)
-const configSaved = ref(false)
+const autoStart = ref(false)
+const logPath = ref('')
+const refreshFilesKey = inject('refreshFilesKey', ref(0))
+
+// 只显示日志目录名（最后一段），完整路径放 tooltip
+const logDirName = computed(() => {
+  if (!logPath.value) return ''
+  const parts = logPath.value.replace(/\\/g, '/').split('/').filter(Boolean)
+  return parts[parts.length - 1] || logPath.value
+})
+
+// 上传设置子弹窗
+const showSubDialog = ref(false)
+const subDialogValue = ref('')
 const roots = inject('roots', ref([]))
 const newRootPath = ref('')
 const adding = ref(false)
-const settingsError = ref('')
+
+
+function isTauri() { return typeof window !== 'undefined' && window.__TAURI_INTERNALS__ }
+
+// 本机（后端按请求来源 IP 判断）→ 允许打开日志目录
+const isLocal = inject('isLocal', ref(false))
+
+async function openLogDir() {
+  if (!isLocal.value) {
+    ElMessage.info('请在本机（电脑）上打开日志目录')
+    return
+  }
+  try {
+    const res = await openLogDirRequest()
+    if (!res.data.success) ElMessage.error(res.data.message || '打开失败')
+  } catch {
+    ElMessage.error('打开失败')
+  }
+}
+
+async function loadAutoStart() {
+  if (!isTauri()) return
+  try { autoStart.value = await isEnabled() }
+  catch (e) { api.post('/logs', { level: 'error', message: '[自动启动] 检查状态失败: ' + (e.message || e) }) }
+}
+
+async function handleAutoStart(val) {
+  try {
+    if (val) await enable()
+    else await disable()
+    api.post('/logs', { level: 'info', type: 8, message: val ? '开启开机自启' : '关闭开机自启', data: { op: 1, field: 'autostart', now: val } })
+    ElMessage.success(val ? '已开启开机自启' : '已关闭开机自启')
+  } catch (e) {
+    api.post('/logs', { level: 'error', message: '[自动启动] 操作失败: ' + (e.message || e) })
+    ElMessage.error('操作失败')
+    autoStart.value = !val
+  }
+}
 
 function open() {
+  newRootPath.value = ''
   showSettings.value = true
   loadConfig()
   loadRoots()
+  loadAutoStart()
 }
 
 defineExpose({ open })
@@ -81,54 +151,91 @@ defineExpose({ open })
 async function loadRoots() {
   try {
     const res = await fetchRoots()
-    roots.value = res.data.roots || []
-  } catch { roots.value = [] }
+    console.log('fetchRoots response:', res.data)
+    const r = res.data
+    // 新格式：{ success, message, data: { roots } }
+    // 旧格式：{ roots: [...] }
+    if (r.data && Array.isArray(r.data.roots)) {
+      roots.value = r.data.roots
+    } else if (Array.isArray(r.roots)) {
+      roots.value = r.roots
+    } else {
+      console.warn('unexpected roots format:', r)
+      roots.value = []
+    }
+  } catch (e) {
+    console.error('loadRoots error:', e)
+    roots.value = []
+  }
 }
 
 async function loadConfig() {
   try {
     const res = await fetchConfig()
-    configPort.value = res.data.port
     configMaxSize.value = res.data.maxFileSizeMB
     configShowHidden.value = res.data.showHiddenFiles
+    logPath.value = res.data.logPath || ''
   } catch {}
 }
 
-async function handleSaveConfig() {
-  configSaving.value = true
-  configSaved.value = false
+async function handleSaveConfig(restore) {
   try {
-    await updateConfig({
-      port: configPort.value,
-      maxFileSizeMB: configMaxSize.value,
+    const res = await updateConfig({
+      maxFileSizeMB: Number(configMaxSize.value),
       showHiddenFiles: configShowHidden.value
     })
-    configSaved.value = true
-    setTimeout(() => configSaved.value = false, 2000)
-  } catch (err) {
-    settingsError.value = err.response?.data?.error || '保存失败'
-  } finally {
-    configSaving.value = false
+    if (!res.data.success) throw new Error(res.data.message)
+    return true
+  } catch (e) {
+    ElMessage.error(e.message || '配置保存失败')
+    if (restore) restore()
+    return false
   }
+}
+
+async function handleMaxSizeSaved() {
+  const old = configMaxSize.value
+  if (await handleSaveConfig(() => { configMaxSize.value = old })) {
+    ElMessage.success('最大上传配置已保存')
+  }
+}
+
+async function handleHiddenChanged(val) {
+  const old = !val
+  if (await handleSaveConfig(() => { configShowHidden.value = old })) {
+    ElMessage.success(val ? '已开启显示隐藏文件' : '已关闭显示隐藏文件')
+    refreshFilesKey.value++
+  }
+}
+
+function openSubDialog() {
+  subDialogValue.value = String(configMaxSize.value)
+  showSubDialog.value = true
+}
+
+async function handleSubSave() {
+  const val = Number(subDialogValue.value)
+  if (val < 1 || val > 9999) {
+    ElMessage.warning('范围 1-9999 MB')
+    return
+  }
+  configMaxSize.value = val
+  showSubDialog.value = false
+  await handleMaxSizeSaved()
 }
 
 async function handleAddRoot() {
   const p = newRootPath.value.trim()
   if (!p) return
   adding.value = true
-  settingsError.value = ''
   try {
     const res = await addRoot(p)
-    roots.value = res.data.roots || []
+    if (!res.data.success) throw { response: { data: res.data } }
+    roots.value = res.data.data?.roots || []
     newRootPath.value = ''
   } catch (err) {
-    if (err.response) {
-      settingsError.value = err.response.data?.error || `服务器错误 (${err.response.status})`
-    } else if (err.request) {
-      settingsError.value = '无法连接到服务，请重启应用'
-    } else {
-      settingsError.value = err.message || '添加失败'
-    }
+    const msg = err.response?.data?.message || err.message || '添加失败'
+    ElMessage.error(msg)
   } finally {
     adding.value = false
   }
@@ -142,25 +249,63 @@ async function handleRemoveRoot(targetPath) {
       type: 'warning'
     })
   } catch { return }
-  settingsError.value = ''
   try {
     const res = await removeRoot(targetPath)
-    roots.value = res.data.roots || []
+    if (!res.data.success) throw { response: { data: res.data } }
+    roots.value = res.data.data?.roots || []
   } catch (err) {
-    settingsError.value = err.response?.data?.error || '移除失败'
+    ElMessage.error(err.response?.data?.message || '移除失败')
   }
 }
 </script>
 
 <style scoped>
 .settings-body { padding-left: 0; }
+:deep(.el-divider--horizontal) { margin: 3px 0; }
 .settings-body { display: flex; flex-direction: column; gap: 12px; }
 .settings-section { display: flex; flex-direction: column; gap: 10px; }
-.section-title { font-size: 14px; font-weight: 600; color: #303133; }
+.section-title { font-size: 16px; font-weight: 600; color: #303133; }
 .setting-row { display: flex; align-items: center; justify-content: space-between; padding: 4px 0; }
-.setting-label { font-size: 13px; color: #606266; }
-.setting-actions { display: flex; align-items: center; gap: 8px; padding-top: 4px; }
-.success-msg { font-size: 13px; color: #67c23a; }
+.setting-label { font-size: 14px; color: #000; font-weight: 500; }
+.setting-value {
+  font-size: 14px;
+  color: #000;
+  font-weight: 500;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  height: 28px;
+  padding: 0 8px;
+  border: 1px solid #dcdfe6;
+  border-radius: 4px;
+  background: #fff;
+  width: 80px;
+  transition: border-color 0.2s;
+  box-sizing: border-box;
+}
+.setting-value:hover { border-color: #409eff; }
+.logdir-open {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 12px;
+  border-radius: 6px;
+  background: #f5f7fa;
+  color: #606266;
+  font-size: 13px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.2s, color 0.2s;
+}
+.logdir-open:hover { background: #ecf5ff; color: #409eff; }
+.logdir-icon { width: 15px; height: 15px; flex-shrink: 0; }
+.sub-dialog-body { padding: 8px 0; }
+.sub-dialog-row { display: flex; align-items: center; }
+.sub-dialog-row :deep(.el-input) { width: 80px; margin-left: auto; }
+.sub-dialog-label { font-size: 14px; color: #000; font-weight: 500; white-space: nowrap; }
+.sub-dialog-footer :deep(.el-button--default) { color: #000; }
+.sub-dialog-footer { display: flex; justify-content: flex-end; }
+.sub-dialog-title { font-size: 18px; font-weight: 600; }
 .empty-hint { color: #909399; font-size: 14px; text-align: center; padding: 12px 0; }
 
 .root-item {
@@ -177,4 +322,8 @@ async function handleRemoveRoot(targetPath) {
 .add-section { display: flex; align-items: center; gap: 8px; }
 .add-section .el-input { flex: 1; }
 .error-msg { color: #f56c6c; font-size: 13px; }
+</style>
+<style>
+.settings-dialog-wrap .el-dialog__body { padding-top: 0; padding-bottom: 0; }
+.sub-dialog-wrap .el-dialog__body { padding: 0; }
 </style>

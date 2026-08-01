@@ -34,6 +34,7 @@
       v-if="roots.length > 0"
       :upload-path="currentPath"
       :root-index="activeRoot"
+      :root-path="(roots[activeRoot] || {}).path || ''"
       @uploaded="onUploaded"
     />
 
@@ -45,6 +46,7 @@
       :error="error"
       :current-path="currentPath"
       :root-index="activeRoot"
+      :root-path="(roots[activeRoot] || {}).path || ''"
       :pin-top="pinnedNames"
       @open-dir="openDirectory"
       @retry="loadDirectory"
@@ -56,7 +58,8 @@
 <script setup>
 import { ref, onMounted, watch, inject } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { fetchFiles } from '../api'
+import { fetchFiles, apiUrl } from '../api'
+import { ElMessage } from 'element-plus'
 import BreadcrumbNav from '../components/BreadcrumbNav.vue'
 import UploadZone from '../components/UploadZone.vue'
 import FileTable from '../components/FileTable.vue'
@@ -70,6 +73,7 @@ const loading = ref(false)
 const error = ref('')
 const pinnedNames = ref([])
 const roots = inject('roots', ref([]))
+const refreshFilesKey = inject('refreshFilesKey', ref(0))
 const activeRoot = ref(0)
 
 onMounted(() => {
@@ -90,6 +94,11 @@ onMounted(() => {
     activeRoot.value = parseInt(rp) || 0
   }
   loadDirectory()
+})
+
+// 显示隐藏文件变化时完整刷新（含骨架遮罩）
+watch(refreshFilesKey, () => {
+  if (entries.value.length > 0) loadDirectory()
 })
 
 // 根目录变化时：处理移除后的索引变化
@@ -152,13 +161,13 @@ watch(() => [route.query.path, route.query.root], ([newPath, newRoot]) => {
 // 上传完成后：静默拉取新列表，并把上传的文件排到最前
 function onUploaded(newNames) {
   pinnedNames.value = newNames || []
-  refreshDirectory()
+  loadDirectory()
 }
 
 function onRootChange() {
   router.push({ query: { path: '/', root: activeRoot.value } })
   const name = roots.value[activeRoot.value]?.name || '未知'
-  fetch('/api/logs', {
+  fetch(apiUrl('/logs'), {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ level: 'info', type: 10, data: { op: 2, dir: name } })
@@ -181,10 +190,15 @@ async function loadDirectory() {
 
   try {
     const res = await fetchFiles(currentPath.value, activeRoot.value)
-    entries.value = res.data.isDirectory ? res.data.entries : []
-  } catch (err) {
-    const msg = err.response?.data?.error || err.message || '加载失败'
-    error.value = msg
+    if (!res.data.success) {
+      ElMessage.warning(res.data.message)
+      const parent = currentPath.value.replace(/\/+$/, '').replace(/\/[^/]+$/, '') || '/'
+      router.push({ query: { path: parent, root: activeRoot.value } })
+      return
+    }
+    entries.value = res.data.data.isDirectory ? res.data.data.entries : []
+  } catch {
+    error.value = ''
     entries.value = []
   } finally {
     // 保证至少 400ms 的加载时长，让 shimmer 效果能看到
@@ -203,19 +217,19 @@ async function refreshDirectory() {
 
   try {
     const res = await fetchFiles(currentPath.value, activeRoot.value)
-    if (res.data.isDirectory) {
-      entries.value = res.data.entries
+    if (res.data.success && res.data.data?.isDirectory) {
+      entries.value = res.data.data.entries
     }
   } catch {
     // 静默失败，保留旧列表
   }
 }
 
-function navigateTo(path) {
+async function navigateTo(path) {
   router.push({ query: { path, root: activeRoot.value } })
 }
 
-function openDirectory(name) {
+async function openDirectory(name) {
   let newPath = currentPath.value
   if (!newPath.endsWith('/')) newPath += '/'
   newPath += name

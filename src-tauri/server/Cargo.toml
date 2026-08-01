@@ -1,0 +1,23 @@
+[package]
+name = "landisk-server"
+version = "0.1.2"
+edition = "2021"
+
+[dependencies]
+axum = { version = "0.8", features = ["multipart"] }
+multer = "3"
+http-body-util = "0.1"
+tokio = { version = "1", features = ["full"] }
+tokio-stream = { version = "0.1", features = ["sync"] }
+tower-http = { version = "0.6", features = ["cors", "fs"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+chrono = { version = "0.4", features = ["serde"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+qrcode = "0.14"
+image = "0.24"
+uuid = "1"
+dunce = "1.0"
+phf = { version = "0.11", features = ["macros"] }
+urlencoding = "2.1"

@@ -18,7 +18,8 @@ function verifyClean() {
   // 2. config 残留检查
   for (const cfgPath of [
     path.join(os.homedir(), '.landisk', 'config.json'),
-    path.join(__dirname, '..', 'config.json')
+    path.join(__dirname, '..', 'config.json'),
+    path.join(__dirname, '..', 'dev-data', 'config.json')
   ]) {
     if (!fs.existsSync(cfgPath)) continue;
     try {

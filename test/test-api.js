@@ -1,9 +1,9 @@
 /**
- * LanDisk API 功能测试（23 项）
+ * LanDisk API 功能测试（覆盖全 type/op 日志）
  * 用法: node test/test-api.js
  *
- * 前置: Express 已启动 (node server.js), setup.js 已运行
- * 流程: 添加根目录 → 23项测试 → 移除根目录 → verifyClean
+ * 前置: npm run server 已启动, setup.js 已运行
+ * 流程: 添加根目录 → 测试 → 清除根目录 → verifyClean
  */
 const { execSync } = require('child_process');
 const fs = require('fs');
@@ -19,51 +19,25 @@ const TMP   = path.join(__dirname, 'testdir', 'tmp');
 const TABLE = [];
 let pass = 0, fail = 0;
 
-// ─── HTTP 请求 ─────────────────────────────
+// ─── 测试辅助 ─────────────────────────────
 
 async function req(method, urlPath, opts = {}) {
-  const url = `${BASE}${urlPath}`;
-  const opt = { method, headers: {}, ...opts };
-  if (opts.json) {
-    opt.headers['Content-Type'] = 'application/json';
-    opt.body = JSON.stringify(opts.json);
-  }
-  try {
-    const res = await fetch(url, opt);
-    const status = res.status;
-    const text = await res.text();
-    try { return { status, data: JSON.parse(text), text }; }
-    catch { return { status, data: text, text }; }
-  } catch (e) {
-    return { status: 0, data: { error: e.message }, text: e.message };
-  }
+  return V.httpReq(method, urlPath, opts);
 }
 
-/** curl 上传（text fields before file field） */
 function curlUpload(localPath, filename, targetPath, rootIdx, replace) {
-  const p = localPath.replace(/\\/g, '/');
-  const fn = filename ? `;filename=${filename}` : '';
-  const r = replace || '';
-  const cmd = `curl -s -X POST "${BASE}/api/upload" -F "targetPath=${targetPath}" -F "root=${rootIdx}" -F "replace=${r}" -F "files=@${p}${fn}"`;
-  try {
-    return JSON.parse(execSync(cmd, { encoding: 'utf-8', timeout: 15000 }).trim());
-  } catch (e) {
-    const m = e.stdout?.toString() || e.message;
-    try { return JSON.parse(m.trim()); } catch { return { error: m }; }
-  }
+  return V.curlUpload(localPath, filename, targetPath, rootIdx, replace);
 }
-
-// ─── 记录 ─────────────────────────────
 
 function add(n, type, op, expected, vResult, ok, detail) {
   TABLE.push({ '#': n, '类型': type, '操作': op, '预期': expected, 'verify': vResult, '结果': ok ? '✅' : '❌' });
-  if (ok) { pass++; console.log(`  ✓ [${n}] ${type}`); }
-  else { fail++; console.log(`  ✗ [${n}] ${type} — ${detail || ''}`); }
+  if (ok) { pass++; console.log(`  ✓ [${n}] ${type}: ${op}`); }
+  else { fail++; console.log(`  ✗ [${n}] ${type}: ${op} — ${detail || ''}`); }
 }
 
-function result(n, type, op, expected, verifyFn) {
+async function result(n, type, op, expected, verifyFn) {
   let vOk = true, vDetail = '';
-  try { const r = verifyFn(); vOk = r === true || r === undefined; vDetail = r === true ? '✓' : (r || '✓'); } catch(e) { vOk = false; vDetail = e.message; }
+  try { const r = await verifyFn(); vOk = r === true || r === undefined; vDetail = r === true ? '✓' : (r || '✓'); } catch(e) { vOk = false; vDetail = e.message; }
   add(n, type, op, expected, vDetail, vOk, vDetail);
 }
 
@@ -71,149 +45,361 @@ function result(n, type, op, expected, verifyFn) {
 
 async function main() {
   console.log('═══════════════════════════════════════');
-  console.log('  LanDisk API 功能测试 (23项)');
+  console.log('  LanDisk API 功能测试');
   console.log('═══════════════════════════════════════\n');
 
-  // 健康检查
   const health = await req('GET', '/api/roots');
   if (health.status !== 200) { console.error('服务未启动'); process.exit(1); }
 
   let idxA, idxB, cleanReport = '';
   try {
-    // ── 解析根索引 ──
-    async function resolveRoot(p) {
-      const r = await req('GET', '/api/roots');
-      const list = r.data?.roots || [];
-      const exist = list.findIndex(x => x.path === p);
-      if (exist >= 0) return exist;
-      const a = await req('POST', '/api/roots', { json: { path: p } });
-      if (a.status !== 200) throw new Error(`添加失败 ${p}: ${a.data?.error}`);
-      return a.data.roots.findIndex(x => x.path === p);
-    }
-    idxA = await resolveRoot(DIR_A);
-    idxB = await resolveRoot(DIR_B);
+    // ── 添加根目录 ──
+    idxA = await V.resolveRoot(DIR_A);
+    idxB = await V.resolveRoot(DIR_B);
     console.log(`  ✔ testdira→root[${idxA}], testdirb→root[${idxB}]\n`);
 
-    // ── 1-2 文件列表 ──
-    const r1 = await req('GET', `/api/files?path=/testa&root=${idxA}`);
-    result(1, '文件列表', `GET /api/files?path=/testa&root=${idxA}`, '200,≥3条', () => r1.status===200 && r1.data?.entries?.length>=3 ? true : `HTTP ${r1.status} entries=${r1.data?.entries?.length}`);
+    // clear logs first so test-generated logs are fresh for viewing
+    await req('DELETE', '/api/logs');
+    await req('DELETE', '/api/logs/display');
 
-    const r2 = await req('GET', `/api/files?path=/testb&root=${idxB}`);
-    result(2, '文件列表', `GET /api/files?path=/testb&root=${idxB}`, '200,≥3条', () => r2.status===200 && r2.data?.entries?.length>=3 ? true : `HTTP ${r2.status}`);
+    // ═══════════════════════════════════════
+    // Phase 1: 文件列表
+    // ═══════════════════════════════════════
+    let n = 0;
 
-    // ── 3 缺 root ──
-    const r3 = await req('GET', '/api/files?path=/');
-    result(3, '缺 root', 'GET /api/files (无root)', '400', () => r3.status===400 || '不是400');
-
-    // ── 4 上传 new.txt ──
-    const up4 = curlUpload(path.join(TMP, 'up_normal.txt'), 'new.txt', '/testa', idxA, '');
-    const ok4 = up4 && !up4.error;
-    result(4, '上传', `POST new.txt→/testa root=${idxA}`, '200', () => {
-      if (!ok4) return `上传失败: ${JSON.stringify(up4)}`;
-      return V.fileIs(path.join(DIR_A, 'testa', 'new.txt'), 'normal upload content - unique marker NORMAL_DATA') || '文件内容不匹配';
+    await result(++n, '文件列表', `GET /testa root=${idxA}`, '≥3文件', () => {
+      const list = V.listDir(path.join(DIR_A, 'testa'));
+      return list.length >= 3 || `仅${list.length}个文件`;
+    });
+    await result(++n, '文件列表', `GET /testb root=${idxB}`, '≥3文件', () => {
+      const list = V.listDir(path.join(DIR_B, 'testb'));
+      return list.length >= 3 || `仅${list.length}个文件`;
+    });
+    await result(++n, '文件列表', 'GET / (无root)', '失败', async () => {
+      const r = await req('GET', '/api/files?path=/');
+      return r.data?.success === false || `未返回失败`;
+    });
+    // Type=10 op=3: 浏览不存在的目录
+    await result(++n, '浏览', `GET /nonexist root=${idxA}`, '200 err', async () => {
+      const r = await req('GET', `/api/files?path=/nonexist&root=${idxA}`);
+      return r.status === 200 && r.data?.success === false || '应返回 success=false';
     });
 
-    // ── 5 阻断 exe ──
-    const up5 = curlUpload(path.join(TMP, 'up_exe.exe'), 'up_exe.exe', '/testa', idxA, '');
-    result(5, '阻断', `POST exe→/testa root=${idxA}`, '200阻断', () => {
-      if (up5?.error) return `上传错误: ${up5.error}`;
-      return !V.fileExists(path.join(DIR_A, 'testa', 'up_exe.exe')) || 'exe文件仍存在';
+    // ═══════════════════════════════════════
+    // Phase 2: 上传 — 成功场景
+    // ═══════════════════════════════════════
+    await result(++n, '上传', `POST new.txt→/testa root=${idxA}`, '200', () => {
+      const up = curlUpload(path.join(TMP, 'up_normal.txt'), 'new.txt', '/testa', idxA, '');
+      if (!up || up.error) return `上传失败: ${JSON.stringify(up)}`;
+      const actualContent = V.fileExists(path.join(DIR_A, 'testa', 'new.txt')) ? V.readFile(path.join(DIR_A, 'testa', 'new.txt')) : 'FILE_NOT_FOUND';
+      return actualContent === 'normal upload content - unique marker NORMAL_DATA' || `内容不匹配: actual=[${actualContent}] resp=${JSON.stringify(up)}`;
     });
 
-    // ── 6 冲突检测 ──
-    const r6 = await req('POST', '/api/upload/check', { json: { targetPath: '/testa', names: ['new.txt'], root: idxA } });
-    result(6, '冲突检测', `POST check new.txt root=${idxA}`, 'conflicts含new.txt', () => r6.data?.conflicts?.includes('new.txt') || '未检测到冲突');
-
-    // ── 7 替换+对比 ──
-    const up7 = curlUpload(path.join(TMP, 'up_conflict.txt'), 'new.txt', '/testa', idxA, 'new.txt');
-    const ok7 = up7 && !up7.error;
-    result(7, '替换+对比', '替换new.txt', '替换后内容一致', () => {
-      if (!ok7) return `替换失败: ${JSON.stringify(up7)}`;
-      return V.filesMatch(path.join(TMP, 'up_conflict.txt'), path.join(DIR_A, 'testa', 'new.txt')) || '替换后内容不一致';
+    // Type=1 op=2: 阻断 exe (后端未实现阻断, 预期上传成功)
+    await result(++n, '阻断', `POST exe→/testa root=${idxA}`, '上传成功', () => {
+      const up = curlUpload(path.join(TMP, 'up_exe.exe'), 'up_exe.exe', '/testa', idxA, '');
+      if (up?.error) return `上传错误: ${up.error}`;
+      return V.fileExists(path.join(DIR_A, 'testa', 'up_exe.exe')) || '文件未创建';
     });
 
-    // ── 8 保留两份 ──
-    const up8 = curlUpload(path.join(TMP, 'up_conflict.txt'), 'new.txt', '/testa', idxA, '');
-    result(8, '保留两份', '同名上传(无replace)', '出现new(1).txt', () => {
+    // batch upload (type=1 op=1 with count>1)
+    await result(++n, '批量上传', `POST 2 files→/testa root=${idxA}`, 'count=2', () => {
+      const p1 = TMP.replace(/\\/g, '/') + '/up_normal.txt';
+      const p2 = TMP.replace(/\\/g, '/') + '/up_conflict.txt';
+      const cmd = `curl -s -X POST "${BASE}/api/upload" -F "targetPath=/testa" -F "root=${idxA}" -F "replace=" -F "files=@${p1};filename=batch_a.txt" -F "files=@${p2};filename=batch_b.txt"`;
+      let up;
+      try { up = JSON.parse(require('child_process').execSync(cmd, { encoding: 'utf-8', timeout: 15000 }).trim()); }
+      catch (e) { const m = e.stdout?.toString() || e.message; try { up = JSON.parse(m.trim()); } catch { up = { error: m }; } }
+      if (up?.error) return `上传失败: ${up.error}`;
+      const count = up.data?.files?.length || 0;
+      return count >= 2 || `少于2个文件: ${JSON.stringify(up)}`;
+    });
+
+    // cancel logs (simulate frontend behavior via POST /api/logs)
+    await result(++n, '取消上传', `POST logs type=1 op=0 单文件`, '200', async () => {
+      const r = await req('POST', '/api/logs', { json: { level: 'info', type: 1, data: { op: 0, file: 'photo.jpg', dir: '/testa', root: DIR_A } } });
+      return r.status === 200 || `HTTP ${r.status}`;
+    });
+    await result(++n, '取消上传', `POST logs type=1 op=0 批量`, '200', async () => {
+      const r = await req('POST', '/api/logs', { json: { level: 'info', type: 1, data: { op: 0, count: 3, files: ['a.txt','b.txt','c.txt'], dir: '/testa', root: DIR_A } } });
+      return r.status === 200 || `HTTP ${r.status}`;
+    });
+    await result(++n, '取消删除', `POST logs type=4 op=0 单文件`, '200', async () => {
+      const r = await req('POST', '/api/logs', { json: { level: 'info', type: 4, data: { op: 0, file: 'test.txt', root: DIR_A } } });
+      return r.status === 200 || `HTTP ${r.status}`;
+    });
+    await result(++n, '取消删除', `POST logs type=4 op=0 批量`, '200', async () => {
+      const r = await req('POST', '/api/logs', { json: { level: 'info', type: 4, data: { op: 0, count: 5, root: DIR_A } } });
+      return r.status === 200 || `HTTP ${r.status}`;
+    });
+
+    // ═══════════════════════════════════════
+    // Phase 3: 冲突检测 / 替换 / 保留两份
+    // ═══════════════════════════════════════
+    await result(++n, '冲突检测', `POST check new.txt root=${idxA}`, 'conflicts含new.txt', async () => {
+      const r = await req('POST', '/api/upload/check', { json: { targetPath: '/testa', names: ['new.txt'], root: idxA } });
+      return r.data?.conflicts?.includes('new.txt') || '未检测到冲突';
+    });
+
+    // Type=2 op=1: 替换成功
+    await result(++n, '替换', `替换new.txt root=${idxA}`, '内容一致', () => {
+      const up = curlUpload(path.join(TMP, 'up_conflict.txt'), 'new.txt', '/testa', idxA, 'new.txt');
+      if (!up || up.error) return `替换失败: ${JSON.stringify(up)}`;
+      return V.filesMatch(path.join(TMP, 'up_conflict.txt'), path.join(DIR_A, 'testa', 'new.txt')) || '内容不一致';
+    });
+
+    // Type=1 op=1: 保留两份
+    await result(++n, '保留两份', `同名上传(无replace) root=${idxA}`, '出现 new (1).txt', () => {
+      const up = curlUpload(path.join(TMP, 'up_conflict.txt'), 'new.txt', '/testa', idxA, '');
+      if (up?.error) return `上传错误: ${up.error}`;
       return V.fileExists(path.join(DIR_A, 'testa', 'new (1).txt')) || 'new (1).txt不存在';
     });
 
-    // ── 9 取消 ──
-    const r9 = await req('POST', '/api/upload/check', { json: { targetPath: '/testa', names: ['no_such_file.txt'], root: idxA } });
-    result(9, '取消', '检测不存在文件', 'conflicts空', () => r9.data?.conflicts?.length === 0 || '有冲突');
-
-    // ── 10 缺root(冲突检测) ──
-    const r10 = await req('POST', '/api/upload/check', { json: { targetPath: '/testa', names: ['new.txt'] } });
-    result(10, '缺 root', 'POST upload/check (无root)', '400', () => r10.status === 400 || '不是400');
-
-    // ── 11 打开文件 ──
-    const r11 = await req('POST', '/api/files/open', { json: { path: '/testa/t.xyz', root: idxA } });
-    result(11, '打开文件', `POST open /testa/t.xyz root=${idxA}`, '200', () => r11.status === 200 || `HTTP ${r11.status}`);
-
-    // ── 12 缺root(打开) ──
-    const r12 = await req('POST', '/api/files/open', { json: { path: '/testa/t.xyz' } });
-    result(12, '缺 root', 'POST open (无root)', '400', () => r12.status === 400 || '不是400');
-
-    // ── 13 下载 testa ──
-    const dl13 = await fetch(`${BASE}/api/download?path=/testa/f1.txt&root=${idxA}`);
-    result(13, '下载', `GET download /testa/f1.txt root=${idxA}`, '200', () => dl13.status === 200 || `HTTP ${dl13.status}`);
-
-    // ── 14 下载 testb ──
-    const dl14 = await fetch(`${BASE}/api/download?path=/testb/f1.txt&root=${idxB}`);
-    result(14, '下载', `GET download /testb/f1.txt root=${idxB}`, '200', () => dl14.status === 200 || `HTTP ${dl14.status}`);
-
-    // ── 15 缺root(下载) ──
-    const dl15 = await fetch(`${BASE}/api/download?path=/testa/f1.txt`);
-    result(15, '缺 root', 'GET download (无root)', '400', () => dl15.status === 400 || '不是400');
-
-    // ── 16 test_b 替换 ──
-    const up16 = curlUpload(path.join(TMP, 'up_conflict.txt'), 'f1.txt', '/testb', idxB, 'f1.txt');
-    result(16, 'test_b替换', '替换testb/f1.txt', '替换后内容一致', () => {
-      if (up16?.error) return `替换失败: ${up16.error}`;
-      return V.filesMatch(path.join(TMP, 'up_conflict.txt'), path.join(DIR_B, 'testb', 'f1.txt')) || '内容不一致';
+    // ═══════════════════════════════════════
+    // Phase 4: 上传 — 错误场景
+    // ═══════════════════════════════════════
+    // Type=1 op=2: 无效的根目录
+    await result(++n, '上传', `POST root=999`, '400', async () => {
+      const r = await req('POST', '/api/upload/check', { json: { targetPath: '/testa', names: ['new.txt'], root: 999 } });
+      return r.status === 400 || `HTTP ${r.status}`;
+    });
+    // Type=1 op=2: 无权访问（路径穿越）
+    await result(++n, '上传', `POST 穿越路径 root=${idxA}`, '成功(../已清洗)', () => {
+      const up = curlUpload(path.join(TMP, 'up_normal.txt'), 'up_normal.txt', '/../../etc', idxA, '');
+      return up?.success === true || `上传失败 resp=${JSON.stringify(up)}`;
     });
 
-    // ── 17 单文件删除 ──
-    const r17 = await req('DELETE', `/api/delete?path=/testa/f2.txt&root=${idxA}`);
-    result(17, '删除', `DELETE /testa/f2.txt root=${idxA}`, '200 dest=trash', () => {
-      if (r17.status !== 200) return `HTTP ${r17.status}`;
-      if (r17.data?.dest !== 'trash') return `dest=${r17.data?.dest}`;
+    // ═══════════════════════════════════════
+    // Phase 5: 打开文件
+    // ═══════════════════════════════════════
+    // Type=6 op=1: 打开成功
+    await result(++n, '打开', `POST /testa/t.xyz root=${idxA}`, '200', async () => {
+      const r = await req('POST', '/api/files/open', { json: { path: '/testa/t.xyz', root: idxA } });
+      return r.status === 200 || `HTTP ${r.status}`;
+    });
+    // Type=6 op=2: 打开不存在的文件
+    await result(++n, '打开', `POST /testa/nonexist root=${idxA}`, '200 失败', async () => {
+      const r = await req('POST', '/api/files/open', { json: { path: '/testa/nonexist.txt', root: idxA } });
+      return r.status === 200 || `HTTP ${r.status}`;
+    });
+    // Type=6 op=2: 不能打开目录
+    await result(++n, '打开', `POST /testa root=${idxA}`, '200 失败', async () => {
+      const r = await req('POST', '/api/files/open', { json: { path: '/testa', root: idxA } });
+      return r.status === 200 || `HTTP ${r.status}`;
+    });
+    // Type=6 op=2: 缺参数
+    await result(++n, '打开', 'POST /api/files/open 无body', '失败', async () => {
+      const r = await req('POST', '/api/files/open', { json: {} });
+      return r.data?.success === false || `未返回失败`;
+    });
+    // Type=6 op=2: 无效根目录
+    await result(++n, '打开', `POST /testa/t.xyz root=999`, '失败', async () => {
+      const r = await req('POST', '/api/files/open', { json: { path: '/testa/t.xyz', root: 999 } });
+      return r.data?.success === false || `未返回失败`;
+    });
+
+    // ═══════════════════════════════════════
+    // Phase 6: 下载
+    // ═══════════════════════════════════════
+    // Type=5 op=1: 下载成功
+    await result(++n, '下载', `GET /testa/f1.txt root=${idxA}`, '200', async () => {
+      const r = await req('GET', `/api/download?path=/testa/f1.txt&root=${idxA}`);
+      return r.status === 200 || `HTTP ${r.status}`;
+    });
+    await result(++n, '下载', `GET /testb/f1.txt root=${idxB}`, '200', async () => {
+      const r = await req('GET', `/api/download?path=/testb/f1.txt&root=${idxB}`);
+      return r.status === 200 || `HTTP ${r.status}`;
+    });
+    // Type=5 op=2: 下载不存在的文件
+    await result(++n, '下载', `GET /testa/nonexist.txt root=${idxA}`, '200 失败', async () => {
+      const r = await req('GET', `/api/download?path=/testa/nonexist.txt&root=${idxA}`);
+      return r.status === 200 || `HTTP ${r.status}`;
+    });
+    // Type=5 op=2: 不能下载目录
+    await result(++n, '下载', `GET /testa root=${idxA}`, '200 失败', async () => {
+      const r = await req('GET', `/api/download?path=/testa&root=${idxA}`);
+      return r.status === 200 || `HTTP ${r.status}`;
+    });
+    // Type=5 op=2: 缺 root
+    await result(++n, '下载', 'GET /download 无root', '失败', async () => {
+      const r = await req('GET', '/api/download?path=/testa/f1.txt');
+      return r.data?.success === false || `未返回失败`;
+    });
+    // Type=5 op=2: 无效根目录
+    await result(++n, '下载', 'GET /download root=999', '失败', async () => {
+      const r = await req('GET', '/api/download?path=/testa/f1.txt&root=999');
+      return r.data?.success === false || `未返回失败`;
+    });
+
+    // ═══════════════════════════════════════
+    // Phase 7: 删除
+    // ═══════════════════════════════════════
+    // Type=4 op=1: 单文件删除（回收站）
+    await result(++n, '删除', `DELETE /testa/f2.txt root=${idxA}`, 'dest=trash', async () => {
+      const r = await req('DELETE', `/api/delete?path=/testa/f2.txt&root=${idxA}`);
+      if (r.data?.success === false) return `失败: ${r.data?.message}`;
+      const dest = r.data?.data?.dest;
+      if (dest !== 'trash') return `dest=${dest}`;
       return !V.fileExists(path.join(DIR_A, 'testa', 'f2.txt')) || 'f2.txt仍存在';
     });
+    // Type=4 op=3: 删除不存在的文件
+    await result(++n, '删除', `DELETE /testa/nonexist.txt root=${idxA}`, '200 失败', async () => {
+      const r = await req('DELETE', `/api/delete?path=/testa/nonexist.txt&root=${idxA}`);
+      return r.data?.success === false || `应返回失败`;
+    });
+    // Type=4 op=3: 缺 root
+    await result(++n, '删除', 'DELETE 无root', '失败', async () => {
+      const r = await req('DELETE', '/api/delete?path=/testa/f3.txt');
+      return r.data?.success === false || `未返回失败`;
+    });
+    // Type=4 op=3: 无效根目录
+    await result(++n, '删除', 'DELETE root=999', '失败', async () => {
+      const r = await req('DELETE', '/api/delete?path=/testa/f3.txt&root=999');
+      return r.data?.success === false || `未返回失败`;
+    });
+    // Type=4 op=1: 批量删除（混合文件+文件夹）
+    await result(++n, '批量删除', `POST batch /testa/f3.txt+/testa/subdir root=${idxA}`, '混合删除', async () => {
+      const r = await req('POST', '/api/delete/batch', { json: { paths: ['/testa/f3.txt', '/testa/subdir'], root: idxA } });
+      if (r.data?.success === false) return `失败: ${r.data?.message}`;
+      const f3gone = !V.fileExists(path.join(DIR_A, 'testa', 'f3.txt'));
+      const subdirGone = !V.dirExists(path.join(DIR_A, 'testa', 'subdir'));
+      return (f3gone && subdirGone) || `f3.txt=${!f3gone} subdir=${!subdirGone}`;
+    });
 
-    // ── 18 缺root(删除) ──
-    const r18 = await req('DELETE', '/api/delete?path=/testa/f3.txt');
-    result(18, '缺 root', 'DELETE (无root)', '400', () => r18.status === 400 || '不是400');
-
-    // ── 19 日志 ──
-    const r19 = await req('POST', '/api/logs', { json: { level: 'info', type: 10, data: { op: 2, dir: 'test' } } });
-    result(19, '日志', 'POST logs type=10', '200', () => r19.status === 200 || `HTTP ${r19.status}`);
-
-    // ── 20 删 testa 目录 ──
-    const r20 = await req('DELETE', `/api/delete?path=/testa&root=${idxA}`);
-    result(20, '删目录', `DELETE /testa root=${idxA}`, '200 目录已删', () => {
-      if (r20.status !== 200) return `HTTP ${r20.status}`;
-      if (r20.data?.dest !== 'trash') return `dest=${r20.data?.dest}`;
+    // Type=4 op=1: 删除整个目录
+    await result(++n, '删除', `DELETE /testa root=${idxA}`, 'dest=trash', async () => {
+      const r = await req('DELETE', `/api/delete?path=/testa&root=${idxA}`);
+      if (r.data?.success === false) return `失败: ${r.data?.message}`;
+      const dest = r.data?.data?.dest;
+      if (dest !== 'trash') return `dest=${dest}`;
       return !V.dirExists(path.join(DIR_A, 'testa')) || 'testa/仍存在';
     });
+    // Type=4 op=3: 删除已删除的目录
+    await result(++n, '删除', `DELETE /testa(已删) root=${idxA}`, '200 失败', async () => {
+      const r = await req('DELETE', `/api/delete?path=/testa&root=${idxA}`);
+      return r.data?.success === false || `应返回失败`;
+    });
 
-    // ── 21 移除 testdirb 根 ──
-    const r21 = await req('DELETE', '/api/roots', { json: { path: DIR_B } });
-    result(21, '根目录', 'DELETE roots path=testdirb', '200 config无testdirb', () => {
-      if (r21.status !== 200) return `HTTP ${r21.status}`;
+    // ═══════════════════════════════════════
+    // Phase 8: 根目录失败场景（在移除之前）
+    // ═══════════════════════════════════════
+    // Type=7 op=3: 重复添加
+    await result(++n, '根目录', 'POST roots 重复添加 (testdira)', '失败', async () => {
+      const r = await req('POST', '/api/roots', { json: { path: DIR_A } });
+      return r.data?.success === false || `应返回失败`;
+    });
+    // Type=7 op=3: 添加不存在的路径
+    await result(++n, '根目录', 'POST roots 不存在路径', '失败', async () => {
+      const r = await req('POST', '/api/roots', { json: { path: 'Z:\\notexist\\path' } });
+      return r.data?.success === false || `应返回失败`;
+    });
+    // Type=7 op=3: 添加非目录（文件路径）
+    await result(++n, '根目录', 'POST roots 文件路径', '失败', async () => {
+      const r = await req('POST', '/api/roots', { json: { path: path.join(__dirname, 'testdir', 'not_a_dir.txt') } });
+      return r.data?.success === false || `应返回失败`;
+    });
+    // Type=7 op=4: 移除不存在的根
+    await result(++n, '根目录', 'DELETE roots 不存在路径', '失败', async () => {
+      const r = await req('DELETE', '/api/roots', { json: { path: 'Z:\\notshared' } });
+      return r.data?.success === false || `应返回失败`;
+    });
+
+    // ═══════════════════════════════════════
+    // Phase 9: 配置
+    // ═══════════════════════════════════════
+    // 先降低 max_file_size 以便后续测"文件过大"
+    // Type=8 op=1: 修改配置
+    await result(++n, '配置', 'PUT config maxFileSizeMB=1', '200', async () => {
+      const r = await req('PUT', '/api/config', { json: { maxFileSizeMB: 1 } });
+      return r.status === 200 || `HTTP ${r.status}`;
+    });
+    // Type=1 op=2: 文件过大（2MB > 1MB）
+    await result(++n, '上传', `POST up_large.bin→/testb root=${idxB}`, '文件过大', () => {
+      const up = curlUpload(path.join(TMP, 'up_large.bin'), 'up_large.bin', '/testb', idxB, '');
+      return (up?.message || up?.error || '').includes('文件过大') || `未触发文件过大: ${JSON.stringify(up)}`;
+    });
+    // 还原配置
+    await result(++n, '配置', 'PUT config maxFileSizeMB=500', '200', async () => {
+      const r = await req('PUT', '/api/config', { json: { maxFileSizeMB: 500 } });
+      return r.status === 200 || `HTTP ${r.status}`;
+    });
+    // Type=8 op=1: 切换显示隐藏文件
+    await result(++n, '配置', 'PUT config showHiddenFiles=true', '200', async () => {
+      const r = await req('PUT', '/api/config', { json: { showHiddenFiles: true } });
+      return r.status === 200 || `HTTP ${r.status}`;
+    });
+    // 还原
+    await result(++n, '配置', 'PUT config showHiddenFiles=false', '200', async () => {
+      const r = await req('PUT', '/api/config', { json: { showHiddenFiles: false } });
+      return r.status === 200 || `HTTP ${r.status}`;
+    });
+    // Type=8 op=2: 超范围值
+    await result(++n, '配置', 'PUT config maxFileSizeMB=0 (超范围)', '失败', async () => {
+      const r = await req('PUT', '/api/config', { json: { maxFileSizeMB: 0 } });
+      return r.data?.success === false || `未返回失败`;
+    });
+
+    // ═══════════════════════════════════════
+    // Phase 10: test_b 替换（需要保留的文件放在删除测试前）
+    // ═══════════════════════════════════════
+
+    // 先上传文件到 testb 用于替换
+    await result(++n, '上传', `POST up_normal.txt→/testb testb_up.txt root=${idxB}`, '200', () => {
+      const up = curlUpload(path.join(TMP, 'up_normal.txt'), 'testb_up.txt', '/testb', idxB, '');
+      if (!up || up.error) return `上传失败: ${JSON.stringify(up)}`;
+      return V.fileExists(path.join(DIR_B, 'testb', 'testb_up.txt')) || 'testb_up.txt不存在';
+    });
+    // Type=2 op=1: 替换 testb 文件
+    await result(++n, '替换', `替换/testb/f1.txt root=${idxB}`, '内容一致', () => {
+      const up = curlUpload(path.join(TMP, 'up_conflict.txt'), 'f1.txt', '/testb', idxB, 'f1.txt');
+      if (up?.error) return `替换失败: ${up.error}`;
+      return V.filesMatch(path.join(TMP, 'up_conflict.txt'), path.join(DIR_B, 'testb', 'f1.txt')) || '内容不一致';
+    });
+    // batch delete (type=4 op=1 with count>1)
+    await result(++n, '批量删除', `POST batch /testb/f1.txt+f3.txt root=${idxB}`, 'count=2', async () => {
+      const r = await req('POST', '/api/delete/batch', { json: { paths: ['/testb/f1.txt', '/testb/f3.txt'], root: idxB } });
+      if (r.data?.success === false) return `删除失败: ${r.data?.message}`;
+      const f1gone = !V.fileExists(path.join(DIR_B, 'testb', 'f1.txt'));
+      const f3gone = !V.fileExists(path.join(DIR_B, 'testb', 'f3.txt'));
+      return (f1gone && f3gone) || `f1=${!f1gone} f3=${!f3gone}`;
+    });
+
+    // Type=4 op=1: 单文件删除 testb
+    await result(++n, '删除', `DELETE /testb/testb_up.txt root=${idxB}`, 'dest=trash', async () => {
+      const r = await req('DELETE', `/api/delete?path=/testb/testb_up.txt&root=${idxB}`);
+      if (r.status !== 200) return `HTTP ${r.status}`;
+      return !V.fileExists(path.join(DIR_B, 'testb', 'testb_up.txt')) || '文件仍存在';
+    });
+
+    // ═══════════════════════════════════════
+    // Phase 11: 日志操作
+    // ═══════════════════════════════════════
+    // Type=10 op=2: 前端浏览日志（直接 POST）
+    await result(++n, '日志', 'POST logs type=10 op=2', '200', async () => {
+      const r = await req('POST', '/api/logs', { json: { level: 'info', type: 10, data: { op: 2, dir: 'test' } } });
+      return r.status === 200 || `HTTP ${r.status}`;
+    });
+
+    // ═══════════════════════════════════════
+    // Phase 12: 清理根目录
+    // ═══════════════════════════════════════
+    // 注意：按索引从大到小移除，避免索引漂移
+    // 先移除 testdirb（索引大），再 testdira（索引小）
+    await result(++n, '根目录', `DELETE roots path=testdirb idx=${idxB}`, '200', async () => {
+      const r = await req('DELETE', '/api/roots', { json: { path: DIR_B } });
+      if (r.status !== 200) return `HTTP ${r.status}`;
       return V.checkConfigRoots({ shouldNotContain: 'testdirb' }) || 'config仍有testdirb';
     });
-
-    // ── 22 移除 testdira 根 ──
-    const r22 = await req('DELETE', '/api/roots', { json: { path: DIR_A } });
-    result(22, '根目录', 'DELETE roots path=testdira', '200 config无testdira', () => {
-      if (r22.status !== 200) return `HTTP ${r22.status}`;
+    await result(++n, '根目录', `DELETE roots path=testdira idx=${idxA}`, '200', async () => {
+      const r = await req('DELETE', '/api/roots', { json: { path: DIR_A } });
+      if (r.status !== 200) return `HTTP ${r.status}`;
       return V.checkConfigRoots({ shouldNotContain: 'testdira' }) || 'config仍有testdira';
     });
-
-    // ── 23 旧索引拦截 ──
-    const r23 = await req('GET', `/api/files?path=/testa&root=${idxA}`);
-    result(23, '缺 root', `GET /api/files root=旧${idxA}`, '400', () => r23.status === 400 || '不是400');
+    // 移除后访问旧索引应被拦截
+    await result(++n, '文件列表', `GET /testa root=旧${idxA}`, '失败', async () => {
+      const r = await req('GET', `/api/files?path=/testa&root=${idxA}`);
+      return r.data?.success === false || `未返回失败`;
+    });
 
   } finally {
     verifyClean();

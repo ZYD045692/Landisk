@@ -2,7 +2,9 @@ node_modules
 server-dist
 client/dist
 src-tauri/target
-dist/
+src-tauri/binaries/*.exe
 stats.html
 .claude/
 test/*-results.md
+.pkg-cache/
+upx-5.2.0-win64/

@@ -44,4 +44,11 @@ if (fs.existsSync(bundleRoot)) {
   console.log(`  🧹 已清理 ${bundleRoot}`);
 }
 
+// 清理 sidecar 中间产物（已打进安装包，不再需要）
+const sidecarDir = path.join(ROOT, 'src-tauri', 'binaries');
+if (fs.existsSync(sidecarDir)) {
+  fs.rmSync(sidecarDir, { recursive: true, force: true });
+  console.log(`  🧹 已清理 ${sidecarDir}`);
+}
+
 console.log(`  已拷贝 ${files.length} 个安装包到 ${OUT}`);

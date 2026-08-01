@@ -1,28 +1,16 @@
 {
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
   "productName": "LanDisk",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "identifier": "com.landisk.app",
   "build": {
     "frontendDist": "../client/dist",
     "devUrl": "http://localhost:5173",
-    "beforeDevCommand": "",
-    "beforeBuildCommand": ""
+    "beforeDevCommand": "del /F src-tauri\\server\\target\\debug\\landisk-server.exe 2>nul & taskkill /F /IM landisk-server-x86_64-pc-windows-msvc.exe 2>nul & cargo build --manifest-path src-tauri/server/Cargo.toml && if not exist src-tauri\\binaries mkdir src-tauri\\binaries && copy /Y src-tauri\\server\\target\\debug\\landisk-server.exe src-tauri\\binaries\\landisk-server-x86_64-pc-windows-msvc.exe",
+    "beforeBuildCommand": "del /F src-tauri\\server\\target\\release\\landisk-server.exe 2>nul & taskkill /F /IM landisk-server-x86_64-pc-windows-msvc.exe 2>nul & cargo build --manifest-path src-tauri/server/Cargo.toml --release && if not exist src-tauri\\binaries mkdir src-tauri\\binaries && copy /Y src-tauri\\server\\target\\release\\landisk-server.exe src-tauri\\binaries\\landisk-server-x86_64-pc-windows-msvc.exe"
   },
   "app": {
-    "windows": [
-      {
-        "title": "LanDisk",
-        "visible": false,
-        "width": 1024,
-        "height": 633,
-        "minWidth": 820,
-        "minHeight": 500,
-        "resizable": true,
-        "center": true,
-        "dragDropEnabled": false
-      }
-    ],
+    "windows": [],
     "security": {
       "csp": null
     }
@@ -35,8 +23,11 @@
   "bundle": {
     "active": true,
     "targets": "nsis",
+    "externalBin": [
+      "binaries/landisk-server"
+    ],
     "resources": [
-      "../server-dist/**/*"
+      "../client/dist/**/*"
     ],
     "icon": [
       "icons/32x32.png",

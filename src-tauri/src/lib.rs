@@ -1,22 +1,24 @@
-use std::process::{Child, Command};
-use std::sync::Mutex;
+use std::process::Command;
 use std::time::Duration;
 use std::net::TcpStream;
 use std::path::PathBuf;
 use std::os::windows::process::CommandExt;
+use std::sync::Mutex;
 
-use tauri::menu::{CheckMenuItemBuilder, MenuBuilder, MenuItemBuilder};
+use tauri::menu::{MenuBuilder, MenuItemBuilder};
 use tauri::tray::TrayIconBuilder;
 use tauri::{Manager, WindowEvent};
-use tauri_plugin_autostart::ManagerExt;
+#[cfg_attr(debug_assertions, allow(unused_imports))]
+use tauri_plugin_shell::ShellExt;
 
-struct ServerProcess(Mutex<Option<Child>>);
+struct SidecarPid(Mutex<Option<u32>>);
 
-impl Drop for ServerProcess {
+// 包装 child 进程，drop 时自动 kill
+struct SidecarProcess(Mutex<Option<std::process::Child>>);
+impl Drop for SidecarProcess {
     fn drop(&mut self) {
         if let Ok(mut guard) = self.0.lock() {
-            if let Some(ref mut child) = *guard {
-                eprintln!("[清理] 关闭 Express 服务...");
+            if let Some(mut child) = guard.take() {
                 let _ = child.kill();
                 let _ = child.wait();
             }
@@ -24,79 +26,132 @@ impl Drop for ServerProcess {
     }
 }
 
-fn find_server_js(app: &tauri::App) -> Option<PathBuf> {
-    let candidates = if let Ok(dir) = app.path().resource_dir() {
-        vec![
-            dir.join("server.js"),
-            dir.join("server-dist").join("server.js"),
-            dir.join("_up_").join("server-dist").join("server.js"),
-        ]
-    } else {
-        vec![]
-    };
-
-    for p in &candidates {
-        if p.exists() {
-            eprintln!("[信息] 找到 server.js: {}", p.display());
-            return Some(p.clone());
+fn get_config_port() -> u16 {
+    // config 在同级目录下（安装目录）
+    let config_path = std::env::current_exe()
+        .ok()
+        .and_then(|p| p.parent().map(|d| d.join("config.json")))
+        .unwrap_or_else(|| PathBuf::from("config.json"));
+    if let Ok(content) = std::fs::read_to_string(&config_path) {
+        if let Ok(v) = serde_json::from_str::<serde_json::Value>(&content) {
+            if let Some(port) = v.get("port").and_then(|p| p.as_u64()) {
+                return port as u16;
+            }
         }
     }
-
-    // Dev mode fallback
-    let cwd = PathBuf::from("server.js");
-    if cwd.exists() {
-        return Some(cwd);
-    }
-
-    eprintln!("[错误] 未找到 server.js，搜索路径:");
-    for p in &candidates {
-        eprintln!("       {}", p.display());
-    }
-    None
+    22580
 }
 
-fn ensure_server(app: &tauri::App) -> Option<Child> {
-    let is_running = TcpStream::connect_timeout(
-        &"127.0.0.1:22580".parse().unwrap(),
+#[cfg_attr(debug_assertions, allow(unused_variables))]
+fn ensure_server(app: &tauri::AppHandle, port: u16) -> Option<u32> {
+    // dev 模式：先杀旧 sidecar，避免端口被残留进程占用
+    #[cfg(debug_assertions)]
+    {
+        let _ = Command::new("taskkill")
+            .args(["/F", "/IM", "landisk-server-x86_64-pc-windows-msvc.exe"])
+            .creation_flags(0x08000000)
+            .output();
+        std::thread::sleep(Duration::from_millis(200));
+    }
+
+    let addr = format!("127.0.0.1:{}", port);
+    if TcpStream::connect_timeout(
+        &addr.parse().unwrap(),
         Duration::from_millis(500),
     )
-    .is_ok();
-
-    if is_running {
-        eprintln!("[信息] API 服务已在运行");
+    .is_ok()
+    {
+        eprintln!("[信息] API 服务已在端口 {} 运行", port);
         return None;
     }
 
-    let server_js = match find_server_js(app) {
-        Some(p) => p,
-        None => {
-            eprintln!("[错误] 找不到 server.js，服务无法启动");
-            return None;
+    // Production: Rust sidecar
+    #[cfg(not(debug_assertions))]
+    {
+        let resource_dir = app.path().resource_dir().expect("resource dir");
+        let static_dir = if resource_dir.join("_up_").exists() {
+            resource_dir.join("_up_").join("client").join("dist")
+        } else if resource_dir.join("client").join("dist").exists() {
+            resource_dir.join("client").join("dist")
+        } else {
+            resource_dir.join("_up_").join("client").join("dist")
+        };
+        let static_arg = format!("--static-dir={}", static_dir.display());
+
+        eprintln!("[启动] sidecar: landisk-server (端口 {})", port);
+        eprintln!("[启动] 静态目录: {}", static_dir.display());
+
+        match app.shell().sidecar("landisk-server") {
+            Ok(cmd) => match cmd.args([&static_arg]).spawn() {
+                Ok((_rx, child)) => {
+                    return Some(child.pid());
+                }
+                Err(e) => {
+                    eprintln!("[错误] 无法启动 sidecar: {}", e);
+                }
+            },
+            Err(e) => {
+                eprintln!("[错误] 无法创建 sidecar 命令: {}", e);
+            }
         }
-    };
+        eprintln!("[信息] 尝试 node 回退...");
+    }
 
-    let cwd = server_js.parent().unwrap_or(std::path::Path::new("."));
-    eprintln!("[启动] Express API: {}", server_js.display());
-    eprintln!("[启动] 工作目录: {}", cwd.display());
+    // Dev fallback: 尝试 sidecar
+    let sidecar_path = PathBuf::from("binaries/landisk-server-x86_64-pc-windows-msvc.exe");
+    let static_dir_dev = std::env::current_dir()
+        .unwrap_or_default()
+        .parent()
+        .map(|p| p.join("client").join("dist"))
+        .unwrap_or_else(|| PathBuf::from("../client/dist"));
+    let static_arg = format!("--static-dir={}", static_dir_dev.to_string_lossy());
 
-    match Command::new("node")
-        .arg(&server_js)
-        .current_dir(cwd)
+    // dev 模式下配置写到项目根目录 dev-data/，避免 Tauri 文件监听死循环
+    let data_dir = std::env::current_dir()
+        .unwrap_or_default()
+        .parent()
+        .map(|p| p.join("dev-data"))
+        .unwrap_or_else(|| PathBuf::from("../dev-data"));
+    eprintln!("[启动] sidecar (dev): {}", sidecar_path.display());
+    eprintln!("[启动] 静态目录: {}", static_dir_dev.display());
+    eprintln!("[启动] 数据目录: {}", data_dir.display());
+    match Command::new(&sidecar_path)
+        .args([&static_arg])
+        .env("LANDISK_DATA_DIR", data_dir.to_string_lossy().as_ref())
         .creation_flags(0x08000000)
         .spawn()
     {
-        Ok(c) => Some(c),
-        Err(e) => {
-            eprintln!("[错误] 无法启动 Node.js: {}", e);
-            None
+        Ok(child) => {
+            let pid = child.id();
+            // 存入 managed state，Tauri 退出时自动 kill
+            app.manage(SidecarProcess(Mutex::new(Some(child))));
+            return Some(pid);
+        }
+        Err(e) => eprintln!("[错误] 无法启动 sidecar: {}", e),
+    }
+
+    // fallback: node server.js
+    let server_js = PathBuf::from("../server.js");
+    if server_js.exists() {
+        eprintln!("[启动] Express API (dev): {}", server_js.display());
+        match Command::new("node")
+            .arg(&server_js)
+            .creation_flags(0x08000000)
+            .spawn()
+        {
+            Ok(child) => return Some(child.id()),
+            Err(e) => eprintln!("[错误] 无法启动 Node.js: {}", e),
         }
     }
+    eprintln!("[错误] 无法启动后端服务");
+    None
 }
 
-fn wait_for_server(max_secs: u32) {
+fn wait_for_server(max_secs: u32, port: u16) {
+    let addr = format!("127.0.0.1:{}", port);
     for i in 0..(max_secs * 2) {
         if TcpStream::connect_timeout(
-            &"127.0.0.1:22580".parse().unwrap(),
+            &addr.parse().unwrap(),
             Duration::from_millis(500),
         )
         .is_ok()
@@ -111,6 +166,7 @@ fn wait_for_server(max_secs: u32) {
 
 pub fn run() {
     tauri::Builder::default()
+        .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_single_instance::init(|app, _argv, _cwd| {
             if let Some(w) = app.get_webview_window("main") {
@@ -124,35 +180,39 @@ pub fn run() {
                 .build(),
         )
         .setup(|app| {
-            // 0. 开机自启 → 保持隐藏；手动启动 → 显示窗口
+            let p = get_config_port();
+            eprintln!("[配置] 读取端口: {}", p);
             let is_autostart = std::env::args().any(|a| a == "--hidden");
-            if let Some(w) = app.get_webview_window("main") {
-                let _ = w.navigate("http://localhost:22580".parse().unwrap());
-                if !is_autostart {
-                    let _ = w.show();
-                    let _ = w.set_focus();
-                }
-            }
 
-            // 1. 后台启动 Express server，不阻塞 UI
-            let child = ensure_server(app);
-            app.manage(ServerProcess(Mutex::new(child)));
+            let init_js = format!("window.__LANDISK_PORT__={};", p);
+            let _win = tauri::WebviewWindowBuilder::new(
+                app,
+                "main",
+                tauri::WebviewUrl::default(),
+            )
+            .title("LanDisk")
+            .visible(!is_autostart)
+            .focused(!is_autostart)
+            .inner_size(1000.0, 602.0)
+            .min_inner_size(820.0, 500.0)
+            .resizable(true)
+            .center()
+            .disable_drag_drop_handler()
+            .initialization_script(&init_js)
+            .build()?;
 
-            // 后台检测 server 就绪（仅日志）
-            std::thread::spawn(|| {
-                wait_for_server(10);
+            let _pid = ensure_server(app.handle(), p);
+            app.manage(SidecarPid(Mutex::new(_pid)));
+
+            std::thread::spawn(move || {
+                wait_for_server(10, p);
             });
 
-            // 2. 系统托盘
-            let autostart_enabled = app.autolaunch().is_enabled().unwrap_or(false);
+            // 系统托盘
             let show_item = MenuItemBuilder::with_id("show", "显示窗口").build(app)?;
-            let autostart_item = CheckMenuItemBuilder::with_id("autostart", "开机自启")
-                .checked(autostart_enabled)
-                .build(app)?;
             let quit_item = MenuItemBuilder::with_id("quit", "退出").build(app)?;
             let menu = MenuBuilder::new(app)
                 .item(&show_item)
-                .item(&autostart_item)
                 .separator()
                 .item(&quit_item)
                 .build()?;
@@ -170,22 +230,21 @@ pub fn run() {
                             let _ = w.set_focus();
                         }
                     }
-                    "autostart" => {
-                        let autostart = app.autolaunch();
-                        let enabled = autostart.is_enabled().unwrap_or(false);
-                        if enabled {
-                            let _ = autostart.disable();
-                        } else {
-                            let _ = autostart.enable();
-                        }
-                    }
                     "quit" => {
-                        let state = app.state::<ServerProcess>();
-                        if let Ok(mut guard) = state.0.lock() {
-                            if let Some(ref mut child) = *guard {
-                                let _ = child.kill();
-                                let _ = child.wait();
-                            }
+                        // 先杀掉 sidecar 进程
+                        let state = app.try_state::<SidecarPid>();
+                        let sidecar_pid = match state {
+                            Some(s) => match s.0.lock() {
+                                Ok(guard) => *guard,
+                                Err(_) => None,
+                            },
+                            None => None,
+                        };
+                        if let Some(pid) = sidecar_pid {
+                            let _ = Command::new("taskkill")
+                                .args(["/PID", &pid.to_string(), "/F"])
+                                .creation_flags(0x08000000)
+                                .spawn();
                         }
                         app.exit(0);
                     }

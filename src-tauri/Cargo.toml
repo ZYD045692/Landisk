@@ -1,6 +1,6 @@
 [package]
 name = "landisk"
-version = "0.1.0"
+version = "0.1.2"
 description = "LanDisk"
 authors = ["you"]
 license = ""
@@ -24,3 +24,4 @@ tauri-plugin-log = "2"
 tauri-plugin-autostart = "2"
 tauri-plugin-single-instance = "2"
 tauri-plugin-shell = "2"
+tauri-plugin-process = "2"

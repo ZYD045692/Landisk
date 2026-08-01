@@ -1,17 +1,14 @@
 <template>
   <div class="upload-wrapper">
-    <div
-      class="drop-zone"
-    >
+    <div class="drop-zone">
       <el-icon :size="32" color="#909399"><UploadFilled /></el-icon>
       <p class="drop-text">拖拽文件到此处上传</p>
       <el-divider class="upload-divider">
-        <span style="color:#c0c4cc;font-size:12px;">或者</span>
+        <span style="color:#c0c4cc;font-size:14px;">或者</span>
       </el-divider>
       <el-button type="primary" :icon="Plus" @click="triggerFileInput" :loading="uploading">
         {{ uploading ? '上传中...' : '选择文件' }}
       </el-button>
-
     </div>
 
     <!-- 上传进度 -->
@@ -20,28 +17,51 @@
       <p class="progress-text">{{ progressText }}</p>
     </div>
 
-    <!-- 冲突弹窗 -->
-    <el-dialog v-model="showConflict" title="同名文件处理" width="480px" destroy-on-close>
-      <div class="conflict-body">
-        <div class="conflict-actions">
-          <span class="conflict-actions-label">全部设为：</span>
+    <!-- 上传确认弹窗 -->
+    <el-dialog v-model="showConfirm" title="上传确认" width="540px" destroy-on-close :close-on-click-modal="false">
+      <div class="confirm-body">
+        <div class="confirm-actions">
+          <span class="confirm-actions-label">全部设为：</span>
           <el-button size="small" @click="setAllChoices('replace')">替换</el-button>
           <el-button size="small" @click="setAllChoices('keep')">保留两份</el-button>
           <el-button size="small" @click="setAllChoices('skip')">取消</el-button>
+          <span class="confirm-summary">共 {{ allFiles.length }} 个文件</span>
         </div>
         <el-divider style="margin:4px 0" />
-        <div v-for="name in conflictList" :key="name" class="conflict-row">
-          <span class="conflict-name">📄 {{ name }}</span>
-          <el-radio-group v-model="conflictChoices[name]">
-            <el-radio value="replace">替换</el-radio>
-            <el-radio value="keep">保留两份</el-radio>
-            <el-radio value="skip">取消</el-radio>
-          </el-radio-group>
+
+        <!-- 分页文件列表 -->
+        <div class="confirm-list">
+          <div v-for="item in pagedFiles" :key="item.name" class="confirm-row" :class="{ 'is-new': !item.conflict }">
+            <span class="confirm-name">{{ item.name }}</span>
+            <template v-if="item.conflict">
+              <el-radio-group v-model="choices[item.name]" class="confirm-radio-group">
+                <el-radio value="replace">替换</el-radio>
+                <el-radio value="keep">保留两份</el-radio>
+                <el-radio value="skip">取消</el-radio>
+              </el-radio-group>
+            </template>
+            <el-radio-group v-else v-model="choices[item.name]" class="confirm-radio-group">
+              <el-radio value="keep">保留</el-radio>
+              <el-radio value="skip">取消</el-radio>
+            </el-radio-group>
+          </div>
+        </div>
+
+        <!-- 分页控件 -->
+        <div v-if="totalPages > 1" class="confirm-pagination">
+          <el-pagination
+            v-model:current-page="currentPage"
+            :page-size="pageSize"
+            :total="allFiles.length"
+            layout="prev, pager, next"
+            small
+            background
+          />
         </div>
       </div>
       <template #footer>
-        <el-button @click="onConflictCancel">取消</el-button>
-        <el-button type="primary" @click="onConflictConfirm">确认上传</el-button>
+        <el-button @click="onConfirmCancel">取消上传</el-button>
+        <el-button type="primary" @click="onConfirmOk">确定上传</el-button>
       </template>
     </el-dialog>
 
@@ -59,9 +79,9 @@
 </template>
 
 <script setup>
-import { ref, inject, watch, onUnmounted } from 'vue'
+import { ref, computed, inject, watch, onUnmounted } from 'vue'
 import { Plus } from '@element-plus/icons-vue'
-import { checkConflicts } from '../api'
+import { checkConflicts, apiUrl } from '../api'
 
 const props = defineProps({
   uploadPath: { type: String, default: '/' },
@@ -77,11 +97,20 @@ const uploadResult = ref('')
 const uploadError = ref(false)
 let resultTimer = null
 
-// 冲突弹窗
-const showConflict = ref(false)
-const conflictList = ref([])
-const conflictChoices = ref({})
-let _conflictResolve = null  // Promise resolve，await 用户确认
+// 上传确认弹窗
+const showConfirm = ref(false)
+const allFiles = ref([])         // [{ name, conflict }]
+const choices = ref({})           // { [name]: 'replace' | 'keep' | 'skip' }
+const currentPage = ref(1)
+const pageSize = 10
+
+const totalPages = computed(() => Math.ceil(allFiles.value.length / pageSize))
+const pagedFiles = computed(() => {
+  const start = (currentPage.value - 1) * pageSize
+  return allFiles.value.slice(start, start + pageSize)
+})
+
+let _confirmResolve = null
 
 onUnmounted(() => {
   if (resultTimer) clearTimeout(resultTimer)
@@ -104,9 +133,8 @@ function triggerFileInput() {
   input.click()
 }
 
-// 单次上传的完整流程：冲突检查 → 弹窗确认 → XHR 上传
+// 上传流程：冲突检查 → （有冲突则弹窗确认） → XHR 上传
 async function uploadFiles(fileList) {
-  // 过滤掉文件夹（浏览器中文件夹 size=0 且 type=''）
   let files = Array.from(fileList).filter(f => !(f.size === 0 && f.type === ''))
   if (files.length === 0) {
     showTemporaryMsg('不支持上传文件夹，请选择文件', true)
@@ -120,43 +148,34 @@ async function uploadFiles(fileList) {
   uploadResult.value = ''
   uploadError.value = false
 
+  let replaceList = []
   try {
-    // === Phase 1: 冲突检查 ===
-    let replaceList = []
-    let skipList = []
-    try {
-      const res = await checkConflicts(props.uploadPath, names, props.rootIndex)
-      const conflicts = res.data.conflicts || []
-      if (conflicts.length > 0) {
-        uploading.value = false  // 显示弹窗前关闭进度条
-        const choices = await showConflictDialog(conflicts)
-        if (!choices) return  // 用户取消
+    // Phase 1: 冲突检查
+    const res = await checkConflicts(props.uploadPath, names, props.rootIndex)
+    const conflicts = res.data.conflicts || []
 
-        replaceList = Object.entries(choices)
-          .filter(([, v]) => v === 'replace')
-          .map(([k]) => k)
-        skipList = Object.entries(choices)
-          .filter(([, v]) => v === 'skip')
-          .map(([k]) => k)
-        uploading.value = true
+    if (conflicts.length > 0) {
+      // 有冲突 → 弹确认窗
+      uploading.value = false
+      const result = await showConfirmDialog(names, conflicts)
+      if (!result) return  // 用户点击取消上传
 
-        // 过滤掉取消的文件
-        if (skipList.length > 0) {
-          files = files.filter(f => !skipList.includes(f.name))
-          if (files.length === 0) { uploading.value = false; return }
-        }
+      replaceList = result.replaceList
+      const skipList = result.skipList || []
+      // 过滤掉取消的文件
+      if (skipList.length > 0) {
+        files = files.filter(f => !skipList.includes(f.name))
+        if (files.length === 0) { uploading.value = false; return }
       }
-    } catch {
-      // check 失败，直接上传
+      uploading.value = true
     }
 
-    // === Phase 2: 上传 ===
+    // Phase 2: 上传
     const formData = new FormData()
     formData.append('targetPath', props.uploadPath)
     if (props.rootIndex !== undefined && props.rootIndex !== null) {
       formData.append('root', props.rootIndex)
     }
-    // replace 必须在 files 之前，multer 按顺序解析
     formData.append('replace', replaceList.join(','))
     let count = 0
     for (const file of files) {
@@ -169,16 +188,12 @@ async function uploadFiles(fileList) {
     progressText.value = `准备上传 ${count} 个文件...`
 
     const data = await xhrUpload(formData)
-
-    let msg = data.message || '上传完成'
-    if (skipList.length > 0) msg += `，取消 ${skipList.length} 个`
-    uploadResult.value = msg
+    uploadResult.value = data.message || '上传完成'
     uploadError.value = false
-    // 传出新文件名列表，供 FileBrowser 排到最前
-    const newNames = (data.files || []).map(f => f.name).filter(Boolean)
+    const newNames = (data.data?.files || []).map(f => f.name).filter(Boolean)
     emit('uploaded', newNames)
   } catch (err) {
-    uploadResult.value = err.message
+    uploadResult.value = err.message || '上传失败'
     uploadError.value = true
   } finally {
     uploading.value = false
@@ -186,11 +201,11 @@ async function uploadFiles(fileList) {
   }
 }
 
-// XHR 上传（返回 Promise，用 XMLHttpRequest 以支持进度事件）
+// XHR 上传
 function xhrUpload(formData) {
   return new Promise((resolve, reject) => {
     const xhr = new XMLHttpRequest()
-    xhr.open('POST', '/api/upload')
+    xhr.open('POST', apiUrl('/upload'))
 
     xhr.upload.addEventListener('progress', (e) => {
       if (e.lengthComputable) {
@@ -218,37 +233,75 @@ function xhrUpload(formData) {
 
 // 全部设为统一操作
 function setAllChoices(value) {
-  for (const n of conflictList.value) {
-    conflictChoices.value[n] = value
+  for (const item of allFiles.value) {
+    if (item.conflict) {
+      choices.value[item.name] = value
+    } else if (value === 'skip') {
+      choices.value[item.name] = 'skip'
+    }
   }
 }
 
-// 冲突弹窗：返回 Promise，用户确认后 resolve(choices)，取消则 resolve(null)
-function showConflictDialog(conflicts) {
+function skipFile(name) {
+  choices.value[name] = 'skip'
+}
+
+// 确认弹窗：返回 Promise
+// resolve(replaceList) = 用户确认
+// resolve(null) = 用户取消
+function showConfirmDialog(names, conflicts) {
   return new Promise(resolve => {
-    conflictList.value = conflicts
-    conflictChoices.value = {}
-    for (const n of conflicts) conflictChoices.value[n] = 'replace'
-    showConflict.value = true
-    _conflictResolve = resolve
+    const conflictSet = new Set(conflicts)
+    allFiles.value = names.map(name => ({ name, conflict: conflictSet.has(name) }))
+    choices.value = {}
+    for (const name of conflicts) {
+      choices.value[name] = 'replace'
+    }
+    for (const name of names) {
+      if (!conflictSet.has(name)) {
+        choices.value[name] = 'keep'
+      }
+    }
+    currentPage.value = 1
+    showConfirm.value = true
+    _confirmResolve = resolve
   })
 }
 
-function onConflictConfirm() {
-  showConflict.value = false
-  if (_conflictResolve) {
-    _conflictResolve({ ...conflictChoices.value })
-    _conflictResolve = null
+function onConfirmOk() {
+  showConfirm.value = false
+  if (_confirmResolve) {
+    const replaceList = Object.entries(choices.value)
+      .filter(([, v]) => v === 'replace')
+      .map(([k]) => k)
+    const skipList = Object.entries(choices.value)
+      .filter(([, v]) => v === 'skip')
+      .map(([k]) => k)
+    // 每条取消的文件记一条日志
+    for (const name of skipList) {
+      fetch(apiUrl('/logs'), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ level: 'info', type: 1, data: { op: 0, file: name, dir: props.uploadPath } })
+      }).catch(() => {})
+    }
+    _confirmResolve({ replaceList, skipList })
+    _confirmResolve = null
   }
 }
 
-function onConflictCancel() {
-  showConflict.value = false
-  conflictChoices.value = {}
-  if (_conflictResolve) {
-    _conflictResolve(null)
-    _conflictResolve = null
+function onConfirmCancel() {
+  showConfirm.value = false
+  if (_confirmResolve) {
+    _confirmResolve(null)
+    _confirmResolve = null
   }
+  // 记取消日志
+  fetch(apiUrl('/logs'), {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ level: 'info', type: 1, data: { op: 0, count: allFiles.value.length, files: allFiles.value.map(f => f.name), dir: props.uploadPath } })
+  }).catch(() => {})
 }
 
 function showTemporaryMsg(msg, isError) {
@@ -273,9 +326,10 @@ function showTemporaryMsg(msg, isError) {
 }
 
 .drop-text {
-  color: #909399;
+  color: #000;
   margin: 8px 0 4px;
-  font-size: 14px;
+  font-size: 16px;
+  font-weight: 500;
 }
 
 .upload-divider {
@@ -301,46 +355,83 @@ function showTemporaryMsg(msg, isError) {
   margin-top: 8px;
 }
 
-.conflict-body {
+.confirm-body {
   display: flex;
   flex-direction: column;
-  gap: 14px;
+  gap: 0;
+  max-height: 480px;
 }
 
-.conflict-actions {
+.confirm-actions {
   display: flex;
   align-items: center;
   gap: 8px;
+  padding-bottom: 4px;
 }
-.conflict-actions-label {
+
+.confirm-actions-label {
   font-size: 13px;
   color: #909399;
   white-space: nowrap;
 }
 
-.conflict-row {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 8px 12px;
-  background: #fafafa;
-  border-radius: 6px;
+.confirm-summary {
+  margin-left: auto;
+  font-size: 13px;
+  color: #909399;
 }
 
-.conflict-name {
+.confirm-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-height: 100px;
+  overflow-y: auto;
+}
+
+.confirm-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  border-radius: 4px;
   font-size: 14px;
+}
+
+.confirm-row.is-new {
+  background: transparent;
+  color: #909399;
+}
+
+.confirm-row:not(.is-new) {
+  background: #fafafa;
+}
+
+.confirm-name {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  flex-shrink: 1;
+  flex: 1;
   min-width: 0;
 }
 
-.conflict-row .el-radio-group {
+.confirm-status {
+  flex-shrink: 0;
+  font-size: 12px;
+  color: #67c23a;
+  padding: 0 8px;
+}
+
+.confirm-radio-group {
   flex-shrink: 0;
 }
 
-/* 移动端适配 */
+.confirm-pagination {
+  display: flex;
+  justify-content: center;
+  padding-top: 8px;
+}
+
 @media (max-width: 768px) {
   .drop-zone {
     padding: 16px 12px;

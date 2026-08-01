@@ -6,45 +6,71 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ```bash
 # 后端
-npm run server          # 启动生产 Express (:22580)
-npm run dev             # 后端开发，node --watch 自动重启
-npm start               # npx tauri dev（Tauri 桌面开发模式）
+npm run server          # Rust 后端直启 (:22580) + 前端静态文件
+npm run dev             # cargo watch --poll 轮询检测变更，自动重编译运行
+npm start               # npx tauri dev（Tauri 桌面开发模式，自动编译壳+后端）
+start-dev.bat           # 当前调试模式：杀旧进程 → 构建前端 → 启动 Tauri + Vite。浏览器 localhost:5173
 
 # 前端开发
 cd client && npm run dev       # Vite dev server (:5173)，/api → localhost:22580
-cd client && npm run build     # 构建到 client/dist/，Express 托管
+cd client && npm run build     # 构建到 client/dist/
 
 # 全新检出或新增依赖后
 npm install && cd client && npm install
 
 # 构建安装包
-npm run build:server           # ① 构建前端(client/dist) → ② 打包后端+依赖到 server-dist/
-npx tauri build                # ③ 生成 NSIS 安装包 (.exe)
+npm run build:server           # 构建前端 + 编译 Rust 后端 sidecar
 npm run build:tauri            # 一键：build:server → npx tauri build → copy-installer
+```
+
+### 关于 start-dev.bat 调试模式
+
+当前在 `start-dev.bat` 模式下调试，**全程热更新，不需要重启**：
+- Rust 后端：`cargo watch --poll` 自动检测文件变更 → 自动重编 → 自动重启
+- 前端 + Tauri 壳：Vite HMR 自动热重载，Tauri webview 也从 `localhost:5173` 加载，前端改了浏览器和 Tauri 窗口都自动变化
+- **改了代码直接看效果**，不要问用户要不要重启/重编，也不要手动去跑 cargo build
+
+**不需要重启的情况**（改完就能看到）：
+- Rust handler 代码（`src-tauri/server/src/main.rs`）
+- 前端 Vue / JS / CSS 代码
+- 日志格式、API 封装等纯逻辑修改
+
+**必须重启的情况**（需要手动重启 `start-dev.bat`）：
+- `tauri.conf.json` 改动
+- `Cargo.toml` 新增依赖
+- `package.json` 新增依赖
+- Tauri 壳代码（`src-tauri/src/`）改动
+- 构建脚本（`scripts/`）改动
+- `beforeDevCommand` / `beforeBuildCommand` 改动
+
+如果 cargo 没检测到变更（mtime 精度问题），删旧 exe 强制重编：
+```bash
+del /F src-tauri\server\target\debug\landisk-server.exe
+cargo build --manifest-path src-tauri/server/Cargo.toml
 ```
 
 ## 项目概览
 
-**LanDisk** — 局域网文件快传桌面应用。Tauri 2 壳承载一个 Express 服务，同一进程提供 REST API 和 Vue 3 + Element Plus 前端页面。手机和 PC 在同一局域网下访问同一服务，扫码即连。
+**LanDisk** — 局域网文件快传桌面应用。Tauri 2 壳以 sidecar 方式启动 Rust axum HTTP 服务，提供 REST API 和 Vue 3 + Element Plus 前端。手机和 PC 在同一局域网下访问同一服务，扫码即连。
 
 | 层 | 技术 |
 |---|---|
-| 桌面壳 | Tauri 2 (Rust) — 窗口/托盘/子进程管理 |
+| 桌面壳 | Tauri 2 (Rust) — 窗口/托盘/单实例锁/开机自启 |
+| 后端 | axum (Rust) — sidecar 编译为独立 exe |
 | 前端 | Vue 3 + Vite + Element Plus |
-| 后端 | Express (Node.js) |
 | 打包 | NSIS |
 
 ### Tauri 架构
 
-`src-tauri/src/lib.rs` 管理窗口（1024×633）、系统托盘、单实例锁、开机自启。Express 作为 sidecar 由 Tauri 管理生命周期 — `npm start` = `npx tauri dev`。
+`src-tauri/src/lib.rs` 在 setup 中程序化构建窗口（1000×602）、启动 sidecar、创建系统托盘。窗口由 Rust 构建（tauri.conf.json 中 windows 留空），`initialization_script` 注入 `__LANDISK_PORT__` 供前端 API 使用。前端在 webview 内以 `tauri://localhost` 协议加载，权限走本地路径。
 
 ### 构建流程
 
 ```
-① cd client && npm run build         前端编译到 client/dist/
-② node scripts/bundle-server.js      复制 server 源码 + client/dist/ + 生产依赖到 server-dist/
-③ npx tauri build                    用 server-dist/ 生成 NSIS 安装包
-④ node scripts/copy-installer.js     把安装包复制到 dist/
+① npm --prefix client run build             前端编译到 client/dist/
+② node scripts/build-sidecar.js             编译 Rust 后端 → binaries/ landisk-server.exe
+③ npx tauri build                           用 binaries/ 作 externalBin 生成 NSIS 安装包
+④ node scripts/copy-installer.js            把安装包复制到 dist/
 ```
 
 `npm run build:server` = ①+②
@@ -52,33 +78,28 @@ npm run build:tauri            # 一键：build:server → npx tauri build → c
 
 产物：`dist/LanDisk_*_x64-setup.exe`
 
+### 后端结构（Rust）
+
+```
+src-tauri/server/src/
+├── main.rs              # axum 路由 + 所有 handler（files/upload/download/delete/roots/config/logs/server-info）
+├── config.rs            # 配置加载（数据目录 = LANDISK_DATA_DIR 或程序所在目录）
+├── logger/mod.rs        # 环形缓冲区(200条) + 文件写入(1MB 旋转) + SSE 推流
+└── middleware/path_safety.rs  # 路径穿越防护
+```
+
 ### 配置持久化
 
-配置存 `%APPDATA%/LanDisk/config.json`（安装目录可能只读，Program Files 不可写）。首次运行从仓库 `config.json` 复制到用户目录。字段：`roots[]`, `port`, `maxFileSizeMB`, `showHiddenFiles`。
+数据目录优先级：`LANDISK_DATA_DIR` 环境变量（dev/test 指向 `dev-data/`）→ 否则为程序（landisk-server.exe）所在目录。`config.json` 存于数据目录下，首次运行自动创建，字段：`roots[]`, `port`, `max_file_size_mb`, `show_hidden_files`。
 
 ## 架构模式
 
-### 路由工厂模式
-
-每个路由文件导出 `createXxxRouter(config)` 函数，由 `server.js` 注入全局 `config` 对象。**不要在路由中直接 `require` 配置文件。**
-
-```js
-// routes/files.js
-function createFilesRouter(config) {
-  const router = express.Router();
-  router.get('/', async (req, res) => { ... });
-  return router;
-}
-module.exports = { createFilesRouter };
-```
-
 ### 路径安全门
 
-`middleware/pathSafety.js` 的 `resolveSafePath(userPath, roots)` 是所有 API 端点处理用户路径的唯一入口。工作方式：
-1. 空路径或 `/` → `'.'`
-2. 剥离开头的 `../`、`..\`
-3. `path.resolve(root, normalized)` 得到绝对路径
-4. 校验绝对路径以 `root + path.sep` 开头（防 `D:/Shared` 匹配 `D:/SharedSecret`）
+`middleware/path_safety.rs` 的 `resolve_safe_path(userPath, roots)` 是所有 API 端点处理用户路径的唯一入口。三种分支：
+- 根路径（空或 `/`）→ `'.'`
+- 绝对路径（含 `:` 的 Windows 盘符路径）→ 直接校验是否在根目录范围内
+- 相对路径 → 剥开头的 `../` 后拼接，校验结果在根目录范围内
 
 **添加新 API 时，任何接受用户路径的参数都必须经此函数校验。**
 
@@ -90,88 +111,103 @@ SPA，浏览路径存储在 URL query `?path=/subfolder` 中。`FileBrowser.vue`
 
 `App.vue` 通过 `provide()` 注入 roots（根目录列表）和 droppedFiles（全局拖拽文件）。子组件通过 `inject()` 消费。
 
+### Tauri webview 与 API 通信
+
+生产环境 webview 以 `tauri://localhost` 加载前端（frontendDist），API 请求通过注入的 `__LANDISK_PORT__` 拼绝对地址 `http://localhost:{port}/api`。浏览器直接访问时走相对路径 `/api`（Vite 代理或直连）。
+
 ## API 端点
 
 | 端点 | 方法 | 说明 |
 |---|---|---|
 | `/api/files` | GET | 目录列表，`?path=` + `?root=`(索引) |
-| `/api/upload` | POST | 上传文件（multer） |
+| `/api/files/open` | POST | 打开文件（系统默认程序） |
+| `/api/upload` | POST | 上传文件（multipart） |
 | `/api/upload/check` | POST | 冲突检测（返回已存在的文件名） |
 | `/api/download` | GET | 文件下载，`?path=` |
 | `/api/delete` | DELETE | 删除到回收站，`?path=` |
 | `/api/roots` | GET/POST/DELETE | 根目录增删查 |
+| `/api/config` | GET/PUT | 配置读写 |
 | `/api/server-info` | GET | 返回本机 IP、端口、URL（二维码用） |
+| `/api/logs` | GET/DELETE | 日志查询 / 清除（缓冲池+文件+归档） |
+| `/api/logs/display` | DELETE | 仅清缓冲池 |
+| `/api/logs/stream` | GET | SSE 实时日志推流 |
+| `/api/open/logdir` | POST | 打开日志目录（本机资源管理器，仅本机可调） |
 
 ## 上传流程
 
 1. 前端检查冲突 → `POST /api/upload/check` → 返回已存在的文件名列表
-2. 有冲突 → 弹窗让用户逐项选择「替换/保留两份/取消」
-3. 使用 `XMLHttpRequest`（非 `fetch`）以获得上传进度事件
-4. 后端 `multer.diskStorage` 中处理去重：同名文件自动加 `(1)` `(2)` 序号
-5. 可执行扩展名阻断（`.exe .bat .cmd .ps1 .sh .msi .dll .sys .vbs .scr`）：先写入再立即删除，避免 multer 中途抛错卡死
-6. 中文文件名通过 `Buffer.from(raw, 'latin1').toString('utf8')` 修复编码
+2. **无冲突** → 直接上传（不论文件数量）
+3. **有冲突** → 弹窗让用户逐项选择「替换/保留两份/取消」，单文件也会弹
+4. 使用 `XMLHttpRequest`（非 `fetch`）以获得上传进度事件
+5. 后端处理去重：同名文件自动加 `(1)` `(2)` 序号
+6. 中文文件名由 multer 直接以 UTF-8 处理，无需额外转码
 
 ## 删除流程
 
 - 优先调用 PowerShell COM 方法移入回收站（`Microsoft.VisualBasic.FileIO.FileSystem`）
-- 回收站不可用时 fallback 到 `fs.rm` / `fs.unlink` 永久删除
-- 批量删除使用 `Promise.allSettled` + 逐项进度百分比
+- 回收站不可用时 fallback 到 `fs::remove_file` / `fs::remove_dir_all` 永久删除
 
 ## 前端结构
 
 ```
 client/src/
-├── api/index.js            # Axios 封装，所有 API 函数集中于此
+├── api/index.js            # Axios 封装 + apiUrl helper，所有 API 函数集中于此
 ├── components/
 │   ├── FileTable.vue       # 文件列表 — PC 端 el-table / 移动端卡片，含搜索/排序/分页/批量删除
 │   ├── UploadZone.vue      # 上传区域 + 冲突弹窗 + 进度条 + 全局拖拽监听
+│   ├── LogViewer.vue       # 服务器日志查看器 — 筛选/清除/SSE 实时推流
+│   ├── SettingsDialog.vue  # 设置弹窗 — 最大上传/显示隐藏/开机自启/日志目录/共享目录管理
 │   └── BreadcrumbNav.vue   # 面包屑导航
 ├── views/
 │   └── FileBrowser.vue     # 主视图，组合 BreadcrumbNav + UploadZone + FileTable
 ├── utils/
-│   └── format.js           # getFileIcon(70+种图标，颜色分类)、formatFileSize、formatDate
-├── router/index.js         # 单路由 /
+│   ├── format.js           # getFileIcon(70+种图标，颜色分类)、formatFileSize、formatDate
+│   └── logFormat.js        # 日志条目解析渲染（type/op 码表 → 可读文本）
+├── router/index.js         # 单路由 / + 兜底重定向
 ├── App.vue                 # 根组件：Header/Footer、设置弹窗、二维码、全局拖拽遮罩
 └── main.js                 # 入口：注册 Element Plus + 全部图标
 ```
 
 ## 全局拖拽覆盖层
 
-`App.vue` 中监听 `@dragover`/`@drop`，显示毛玻璃全屏提示（`backdrop-filter: blur(8px)`）。三图标对称三角布局：
-
-- **左侧表格图标**：靠上左后方，旋转 -16deg，底层 Z
-- **右侧文档图标**：靠上右后方，旋转 16deg，底层 Z
-- **中间图表图标**：居中靠下压在前方，最顶层 Z (z-index: 3)
-
-`dragleave` 事件检测鼠标离开窗口边界时关闭覆盖层。
+`App.vue` 中监听 `@dragover`/`@drop`，显示毛玻璃全屏提示（`backdrop-filter: blur(8px)`）。三图标对称三角布局。`dragleave` 事件检测鼠标离开窗口边界时关闭覆盖层。
 
 ### 日志格式
 
 日志采用结构化 JSON，完整 type/op 码表见 [LOG_FORMAT.md](LOG_FORMAT.md)。
 
-## 日志内存缓冲
+## 日志系统
 
-`utils/logger.js` 维护一个环形缓冲区（`ringBuffer[]`），上限 **200 条**。所有日志查询 API（`GET /api/logs`）直接从内存读取，零文件 I/O。
+`logger/mod.rs` 维护一个环形缓冲区（`ringBuffer[]`），上限 **200 条**。所有日志查询 API（`GET /api/logs`）直接从内存读取，零文件 I/O。
 
 **服务启动时**自动从 `landisk.log` 末尾解析最后 **100 条** JSON 条目补入缓冲池，避免重启后日志查看器空白。
 
+日志文件写入 `<数据目录>/logs/landisk.log`，超过 1 MB 或跨天时归档为 `landisk-{date}.log`。
+
 ### SSE 实时推流
 
-日志写入环形缓冲区时通过 `EventEmitter` 触发 `'log'` 事件。日志 API 路由注册了 `GET /api/logs/stream` SSE 端点，前端通过 `EventSource` 监听实时推送新日志，无需轮询。
+日志写入环形缓冲区时通过 `broadcast::channel` 推送。日志 API 路由注册了 `GET /api/logs/stream` SSE 端点，前端通过 `EventSource` 监听实时推送新日志，无需轮询。
 
-```
-后端写日志 → ringBuffer.push() + logEmitter.emit('log')
-                                         │
-                                         ▼
-                    GET /api/logs/stream → EventSource.onmessage
-                                         │
-                                         ▼
-                    logEntries.push() + 粘性滚动
-```
+## 新增功能日志规范
+
+新增功能时必须添加对应的日志记录，修改顺序严格如下：
+
+1. **日志格式文档** → 先在 [LOG_FORMAT.md](LOG_FORMAT.md) 添加格式定义：
+   - type 码表（新操作大类）、data.op 码表（新操作子类型）
+   - data 通用字段（如有新字段）
+   - 渲染输出效果示例（成功/失败/异常至少各一条）
+
+2. **后端日志系统** → 修改 `src-tauri/server/src/logger/mod.rs`，添加 type/op 常量定义
+
+3. **前端日志渲染** → 修改 `client/src/utils/logFormat.js`，添加新 type/op 的 `parseLog()` 分支
+
+4. **后端 handler 写入** → 在 `src-tauri/server/src/main.rs` 对应 API handler 中调用日志写入
+
+**日志系统核心文件：`src-tauri/server/src/logger/mod.rs`**（环形缓冲区 + 文件写入 + SSE 推流三合一）。
 
 ## 路径归一化
 
-`server.js` 中 `POST /api/roots` 使用 `fs.realpathSync.native()` 统一路径大小写，避免 Windows 盘符大小写（`D:` / `d:`）导致同一目录被重复添加。
+根目录添加时使用 `dunce::canonicalize` 统一路径大小写，避免 Windows 盘符大小写（`C:` / `c:`、`D:` / `d:` 等）导致同一目录被重复添加。
 
 ## 路由兜底
 
@@ -183,14 +219,17 @@ client/src/
 
 ## 测试
 
+测试遵循**日志激活与全路径覆盖原则**，API 测试覆盖全 type/op，爬虫测试覆盖前端完整交互路径。详见 [TESTPLAN.md](TESTPLAN.md)。
+
 测试脚本位于 `test/` 目录：
 
 | 脚本 | 说明 |
 |---|---|
 | `test/verify.js` | 文件系统验证工具：dirExists, fileExists, filesMatch, fileIs, checkConfigRoots 等 |
-| `test/setup.js` | 创建测试目录 testdir/{testdira/testa, testdirb/testb, tmp} |
+| `test/setup.js` | 创建测试目录 testdir/{testdira/testa, testdirb/testb, tmp}（**每个测试运行前都必须先执行**） |
 | `test/verify-clean.js` | 删除 testdir/ + 检查 config 残留 |
-| `test/test-api.js` | API 功能测试（23 项），用 verify.js 断言 |
-| `test/test-crawl.js` | 爬虫功能测试（15 项），纯 UI 操作 |
+| `test/test-api.js` | API 功能测试（52 项），用 verify.js 断言 |
+| `test/test-crawl.js` | 爬虫功能测试（22 项），纯 UI 操作（CDP 真实鼠标事件） |
+| `test/capture-screens.js` | 用 CDP 截文档用图到 images/（`node -r ./test/cdp-wrapper.js test/capture-screens.js`） |
 
 全部测试通过：`node test/setup.js && node test/test-api.js && node test/setup.js && node test/test-crawl.js`

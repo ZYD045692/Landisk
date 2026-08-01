@@ -2,7 +2,7 @@
   <div class="breadcrumb-wrapper">
     <el-breadcrumb separator="/">
       <el-breadcrumb-item>
-        <a href="#" @click.prevent="navigate('/')">
+        <a href="#" @click.prevent="navigate('/')" :class="{ 'root-only': isRootOnly }">
           <el-icon><HomeFilled /></el-icon>
           <span class="breadcrumb-label">根目录</span>
         </a>
@@ -29,6 +29,8 @@ const props = defineProps({
 })
 
 const emit = defineEmits(['navigate'])
+
+const isRootOnly = computed(() => pathParts.value.length === 0)
 
 const pathParts = computed(() => {
   const segments = props.currentPath.split('/').filter(Boolean)
@@ -65,6 +67,7 @@ function navigate(path) {
   align-items: center;
   gap: 4px;
   vertical-align: middle;
+  font-size: 16px;
 }
 
 .breadcrumb-wrapper a {
@@ -83,6 +86,11 @@ function navigate(path) {
 
 .breadcrumb-label {
   margin-left: 2px;
+}
+
+.root-only .breadcrumb-label {
+  color: rgb(0, 0, 0);
+  font-weight: 500;
 }
 
 /* 移动端适配 */

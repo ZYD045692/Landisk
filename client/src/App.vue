@@ -26,14 +26,14 @@
       </div>
 
       <!-- 扫码 Dialog -->
-      <el-dialog v-model="showQR" width="360px" center destroy-on-close class="qr-dialog" append-to-body>
-        <template #title><div style="display:flex;align-items:center;gap:6px;font-size:18px"><svg t="1785071639942" viewBox="0 0 1024 1024" width="18" height="18" fill="#000"><path d="M411 71.3c13.6 0 25 11.5 25 25v317.3c0 13.6-11.5 25-25 25H78c-13.6 0-25-11.5-25-25V96.3c0-13.6 11.5-25 25-25h333m0-50H78c-41.3 0-75 33.8-75 75v317.3c0 41.3 33.8 75 75 75h333c41.3 0 75-33.8 75-75V96.3c0-41.3-33.8-75-75-75z m0 567.4c13.6 0 25 11.5 25 25V931c0 13.6-11.5 25-25 25H78c-13.6 0-25-11.5-25-25V613.7c0-13.6 11.5-25 25-25h333m0-50.1H78c-41.3 0-75 33.8-75 75V931c0 41.3 33.8 75 75 75h333c41.3 0 75-33.8 75-75V613.7c0-41.3-33.8-75.1-75-75.1zM944 71.3c13.6 0 25 11.5 25 25v317.3c0 13.6-11.5 25-25 25H611c-13.6 0-25-11.5-25-25V96.3c0-13.6 11.5-25 25-25h333m0-50H611c-41.3 0-75 33.8-75 75v317.3c0 41.3 33.8 75 75 75h333c41.3 0 75-33.8 75-75V96.3c0-41.3-33.8-75-75-75zM631.7 605.9c-13.8 0-25 11.3-25 25v50c0 13.8 11.3 25 25 25 13.8 0 25-11.3 25-25v-50c0.1-13.8-11.2-25-25-25z m147 0c-13.8 0-25 11.3-25 25v147.5c0 13.8 11.3 25 25 25 13.8 0 25-11.3 25-25V630.9c0-13.8-11.3-25-25-25z m144.6 0c-13.8 0-25 11.3-25 25v82.4c0 13.8 11.3 25 25 25 13.8 0 25-11.3 25-25v-82.4c0-13.8-11.3-25-25-25z m0 198.3c-13.8 0-25 11.3-25 25v114.3c0 13.8 11.3 25 25 25 13.8 0 25-11.3 25-25V829.2c0-13.7-11.3-25-25-25z m-291.6-31.9c-13.8 0-25 11.3-25 25v146.3c0 13.8 11.3 25 25 25 13.8 0 25-11.3 25-25V797.3c0.1-13.7-11.2-25-25-25z m147 66.6c-13.8 0-25 11.3-25 25v79.7c0 13.8 11.3 25 25 25s25-11.3 25-25v-79.7c0-13.8-11.3-25-25-25z"/></svg><span>扫码访问</span></div></template>
+      <el-dialog v-model="showQR" width="360px" center destroy-on-close class="qr-dialog" append-to-body :show-close="false">
+        <template #title><div style="display:flex;align-items:center;gap:6px;font-size:18px;font-weight: 600;"><svg t="1785071639942" viewBox="0 0 1024 1024" width="18" height="18" fill="#000"><path d="M411 71.3c13.6 0 25 11.5 25 25v317.3c0 13.6-11.5 25-25 25H78c-13.6 0-25-11.5-25-25V96.3c0-13.6 11.5-25 25-25h333m0-50H78c-41.3 0-75 33.8-75 75v317.3c0 41.3 33.8 75 75 75h333c41.3 0 75-33.8 75-75V96.3c0-41.3-33.8-75-75-75z m0 567.4c13.6 0 25 11.5 25 25V931c0 13.6-11.5 25-25 25H78c-13.6 0-25-11.5-25-25V613.7c0-13.6 11.5-25 25-25h333m0-50.1H78c-41.3 0-75 33.8-75 75V931c0 41.3 33.8 75 75 75h333c41.3 0 75-33.8 75-75V613.7c0-41.3-33.8-75.1-75-75.1zM944 71.3c13.6 0 25 11.5 25 25v317.3c0 13.6-11.5 25-25 25H611c-13.6 0-25-11.5-25-25V96.3c0-13.6 11.5-25 25-25h333m0-50H611c-41.3 0-75 33.8-75 75v317.3c0 41.3 33.8 75 75 75h333c41.3 0 75-33.8 75-75V96.3c0-41.3-33.8-75-75-75zM631.7 605.9c-13.8 0-25 11.3-25 25v50c0 13.8 11.3 25 25 25 13.8 0 25-11.3 25-25v-50c0.1-13.8-11.2-25-25-25z m147 0c-13.8 0-25 11.3-25 25v147.5c0 13.8 11.3 25 25 25 13.8 0 25-11.3 25-25V630.9c0-13.8-11.3-25-25-25z m144.6 0c-13.8 0-25 11.3-25 25v82.4c0 13.8 11.3 25 25 25 13.8 0 25-11.3 25-25v-82.4c0-13.8-11.3-25-25-25z m0 198.3c-13.8 0-25 11.3-25 25v114.3c0 13.8 11.3 25 25 25 13.8 0 25-11.3 25-25V829.2c0-13.7-11.3-25-25-25z m-291.6-31.9c-13.8 0-25 11.3-25 25v146.3c0 13.8 11.3 25 25 25 13.8 0 25-11.3 25-25V797.3c0.1-13.7-11.2-25-25-25z m147 66.6c-13.8 0-25 11.3-25 25v79.7c0 13.8 11.3 25 25 25s25-11.3 25-25v-79.7c0-13.8-11.3-25-25-25z"/></svg><span>扫码访问</span></div></template>
         <div class="qr-body">
           <img v-if="qrDataUrl" :src="qrDataUrl" class="qr-image" alt="QR Code" />
           <el-skeleton v-else :rows="1" animated style="width:200px;height:200px;margin:0 auto" />
           <a :href="serverUrl" target="_blank" rel="noopener noreferrer" class="qr-url">{{ serverUrl }}</a>
-          <el-button size="small" @click="copyUrl" :type="copied ? 'success' : 'default'">
-            {{ copied ? '已复制 ✓' : '复制链接' }}
+          <el-button size="small" @click="copyUrl">
+            复制链接
           </el-button>
           <p class="qr-hint">设备和电脑需在同一局域网下</p>
         </div>
@@ -67,7 +67,7 @@
         v-if="serverDown"
         title="无法连接到后端服务"
         type="error"
-        description="请确认已安装 Node.js 并且 node 命令在系统 PATH 中。安装地址: https://nodejs.org"
+        description="后端服务未启动，请重启应用"
         show-icon
         :closable="false"
         style="margin-bottom:12px"
@@ -96,17 +96,22 @@ const roots = ref([])
 const showQR = ref(false)
 const serverUrl = ref('')
 const qrDataUrl = ref('')
-const copied = ref(false)
+// 本机判断：先用壳/localhost 猜，server-info 返回后按后端来源 IP 精确校正
+const isLocal = ref(
+  (typeof window !== 'undefined' && window.__TAURI_INTERNALS__) ||
+  (typeof location !== 'undefined' && (location.hostname === 'localhost' || location.hostname === '127.0.0.1'))
+)
 const settings = ref(null)
 const logViewer = ref(null)
 
 async function loadRoots() {
   try {
     const res = await fetchRoots()
-    roots.value = res.data.roots || []
+    roots.value = res.data.data?.roots || []
   } catch { roots.value = [] }
 }
 provide('roots', roots)
+provide('isLocal', isLocal)
 
 const globalDragover = ref(false)
 const droppedFiles = ref(null)
@@ -116,6 +121,8 @@ function onGlobalDrop(e) {
   droppedFiles.value = e.dataTransfer.files
 }
 provide('droppedFiles', droppedFiles)
+const refreshFilesKey = ref(0)
+provide('refreshFilesKey', refreshFilesKey)
 
 const serverDown = ref(false)
 const serverRetrying = ref(false)
@@ -127,6 +134,7 @@ async function tryConnect(retries = 5) {
     const res = await api.get('/server-info')
     serverUrl.value = res.data.url
     qrDataUrl.value = await QRCode.toDataURL(res.data.url, { width: 200, margin: 1 })
+    isLocal.value = res.data.local === true
     serverDown.value = false
     serverRetrying.value = false
     loadRoots()
@@ -142,9 +150,11 @@ async function tryConnect(retries = 5) {
 
 onMounted(() => {
   tryConnect()
+  window.addEventListener('dragover', (e) => { e.preventDefault(); globalDragover.value = true })
   window.addEventListener('dragleave', (e) => {
     if (e.clientX <= 0 || e.clientY <= 0) globalDragover.value = false
   })
+  window.addEventListener('drop', (e) => { globalDragover.value = false })
 })
 
 onUnmounted(() => {
@@ -153,8 +163,7 @@ onUnmounted(() => {
 
 function copyUrl() {
   navigator.clipboard.writeText(serverUrl.value).then(() => {
-    copied.value = true
-    setTimeout(() => copied.value = false, 2000)
+    ElMessage.success('已复制')
   }).catch(() => {})
 }
 </script>
@@ -188,7 +197,7 @@ html, body, #app { height: 100%; font-family: Inter, system-ui, sans-serif; font
 
 .qr-body { display: flex; flex-direction: column; align-items: center; gap: 12px; }
 .qr-image { width: 200px; height: 200px; border: 1px solid #ebeef5; border-radius: 4px; }
-.qr-url { font-size: 13px; color: #409eff; word-break: break-all; text-align: center; cursor: pointer; }
+.qr-url { font-size: 14px; color: #409eff; word-break: break-all; text-align: center; cursor: pointer; }
 .qr-url:hover { text-decoration: underline; }
 .qr-hint { font-size: 12px; color: #606266; margin: 0; }
 
@@ -203,7 +212,7 @@ html, body, #app { height: 100%; font-family: Inter, system-ui, sans-serif; font
 .drop-icon-word span { top: 24px; }
 .drop-icon-word::after { top: 34px; width: 18px; }
 .drop-icon-chart { position: absolute; width: 48px; height: 48px; left: 50%; bottom: 0; transform: translateX(-50%); border-radius: 10px; z-index: 3; box-shadow: 0 8px 20px rgba(79,112,255,.2); }
-.drop-text { font-size: 20px; color: #222; margin: 0; }
+.drop-text { font-size: 20px; color: #000; margin: 0; font-weight: 600;}
 
 /* 日志文件列表对齐 */
 .log-prefix-transparent { visibility: hidden; }

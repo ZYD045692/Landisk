@@ -1,29 +1,21 @@
 {
   "name": "landisk",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "LanDisk - 内网文件服务器",
-  "main": "server.js",
   "scripts": {
     "start": "npx tauri dev",
-    "server": "node server.js",
-    "dev": "node --watch server.js",
-    "test": "node --test test/logs.test.js",
+    "server": "cargo run --manifest-path src-tauri/server/Cargo.toml -- --static-dir=client/dist",
+    "dev": "cargo watch --poll --watch src-tauri/server/src -x \"run --manifest-path src-tauri/server/Cargo.toml -- --static-dir=client/dist\"",
     "build": "cd client && npm run build",
-    "build:server": "npm --prefix client run build && node scripts/bundle-server.js",
+    "build:server": "npm --prefix client run build && node scripts/build-sidecar.js",
+    "build:sidecar": "node scripts/build-sidecar.js",
     "prebuild": "npm run build:server",
     "tauri": "npx tauri",
     "build:tauri": "npm run build:server && npx tauri build && node scripts/copy-installer.js"
   },
-  "dependencies": {
-    "express": "^4.21.0",
-    "multer": "^1.4.5-lts.1",
-    "qrcode": "^1.5.4"
-  },
   "devDependencies": {
     "@tauri-apps/cli": "^2.11.4",
     "@tauri-apps/plugin-shell": "^2.3.5",
-    "archiver": "^8.0.0",
-    "jpeg-js": "^0.4.4",
-    "to-ico": "^1.1.5"
+    "ws": "^8.21.1"
   }
 }

@@ -29,7 +29,7 @@
       </div>
       <div v-if="selected.length > 0" class="batch-bar">
         <span class="batch-count">已选 {{ selected.length }} 项</span>
-        <el-button size="small" type="primary" @click="batchDownload">批量下载</el-button>
+        <el-button v-if="!isShell" size="small" type="primary" @click="batchDownload">批量下载</el-button>
         <el-button size="small" type="danger" @click="batchDelete" :loading="batchDeleting">批量删除</el-button>
         <el-button size="small" @click="selected = []">取消选择</el-button>
       </div>
@@ -77,7 +77,10 @@
         >
           <el-table-column type="selection" width="40" />
 
-          <el-table-column label="名称" min-width="120">
+          <el-table-column min-width="120">
+            <template #header>
+              <span style="padding-left:28px">名称</span>
+            </template>
             <template #default="{ row }">
               <div class="file-name-cell">
                 <el-icon :size="20" :color="getIconInfo(row).color">
@@ -109,8 +112,8 @@
                 </el-button>
               </template>
               <template v-else>
-                <el-button link type="success" size="small" @click.stop="downloadFile(row)">
-                  下载
+                <el-button link :type="isShell ? 'primary' : 'success'" size="small" @click.stop="handleFileAction(row)">
+                  {{ isShell ? '打开' : '下载' }}
                 </el-button>
               </template>
               <el-button link type="danger" size="small" @click.stop="confirmDelete(row)">
@@ -173,7 +176,7 @@
               circle
               size="small"
               type="primary"
-              @click.stop="downloadFile(row)"
+              @click.stop="handleFileAction(row)"
             />
             <el-button
               :icon="Delete"
@@ -194,25 +197,26 @@ import { ref, computed, watch } from 'vue'
 import { ElMessageBox, ElMessage } from 'element-plus'
 import { Delete, Download, ArrowRight, Search, Refresh } from '@element-plus/icons-vue'
 import { getFileIcon, formatFileSize, formatDate } from '../utils/format'
-import { getDownloadUrl, deleteFile, batchDownloadLog, batchDeleteLog } from '../api'
+import { deleteFile, apiUrl, downloadFileBlob } from '../api'
 
-async function openFileRow(path) {
+async function openFileRow(fpath) {
   try {
-    const body = { path }
+    const body = { path: fpath }
     if (props.rootIndex !== undefined && props.rootIndex !== null) {
       body.root = props.rootIndex
     }
-    const res = await fetch('/api/files/open', {
+    const res = await fetch(apiUrl('/files/open'), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body)
     })
     const data = await res.json()
-    if (!data.success) throw new Error(data.error || '未知错误')
-  } catch (e) {
-    try {
-      await fetch('/api/logs', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ level: 'error', message: `[打开] 失败: ${path} — ${e.message || e}` }) })
-    } catch {}
+    if (!data.success) {
+      ElMessage.error(data.message)
+      emit('retry')
+    }
+  } catch {
+    emit('retry')
   }
 }
 
@@ -222,6 +226,7 @@ const props = defineProps({
   error: { type: String, default: '' },
   currentPath: { type: String, default: '/' },
   rootIndex: { type: Number, default: undefined },
+  rootPath: { type: String, default: '' },
   pinTop: { type: Array, default: () => [] }
 })
 
@@ -320,42 +325,79 @@ async function batchDelete() {
     )
     batchDeleting.value = true
     deleteProgress.value = 0
-    let completed = 0
-    const results = await Promise.allSettled(
-      selected.value.map(async row => {
-        const filePath = (props.currentPath === '/' ? '' : props.currentPath) + '/' + row.name
-        try {
-          const res = await deleteFile(filePath, props.rootIndex)
-          return { name: row.name, dest: res.data.dest || 'trash' }
-        } catch { return { name: row.name, dest: null } }
-        finally { completed++; deleteProgress.value = Math.round((completed / count) * 100) }
-      })
+
+    const paths = selected.value.map(row =>
+      (props.currentPath === '/' ? '' : props.currentPath) + '/' + row.name
     )
-    const success = results.filter(r => r.status === 'fulfilled' && r.value?.dest)
-    const dir = props.currentPath === '/' ? '/' : props.currentPath
-    const deletedFiles = success.map(r => ({ name: r.value.name }))
+    try {
+      const res = await fetch(apiUrl('/delete/batch'), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ paths, root: props.rootIndex })
+      })
+      const data = await res.json()
+      if (data.success) {
+        ElMessage.success(data.message || '已删除')
+      } else {
+        ElMessage.error(data.message || '删除失败')
+      }
+    } catch {
+      ElMessage.error('删除失败')
+    }
+
     selected.value = []
     deleteProgress.value = 0
     batchDeleting.value = false
-    ElMessage.success(`已删除 ${success.length} / ${count} 个项目`)
-    if (success.length > 0) {
-      const destMap = { trash: '回收站', permanent: '永久删除' }
-      const firstDest = success[0].value.dest
-      const dest = destMap[firstDest] || firstDest
-      batchDeleteLog({ dir, files: deletedFiles, dest }).catch(() => {})
-    }
     emit('deleted')
-  } catch { batchDeleting.value = false }
+  } catch {
+    // 用户取消，记日志
+    fetch(apiUrl('/logs'), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ level: 'info', type: 4, data: { op: 0, count } })
+    }).catch(() => {})
+    batchDeleting.value = false
+  }
 }
 
-function batchDownload() {
-  const dir = props.currentPath === '/' ? '/' : props.currentPath
-  const files = selected.value.filter(r => !r.isDirectory).map(r => ({ name: r.name, size: formatFileSize(r.size) }))
-  selected.value.forEach((row, i) => {
-    const filePath = (props.currentPath === '/' ? '' : props.currentPath) + '/' + row.name
-    setTimeout(() => window.open(getDownloadUrl(filePath, props.rootIndex), '_blank'), i * 300)
-  })
-  if (files.length > 0) batchDownloadLog({ dir, files }).catch(() => {})
+async function batchDownload() {
+  const files = selected.value.filter(r => !r.isDirectory)
+  if (files.length === 0) return
+
+  let success = 0
+  let failures = []
+  for (const row of files) {
+    const fpath = (props.currentPath === '/' ? '' : props.currentPath) + '/' + row.name
+    try {
+      const { response, isJson, data } = await downloadFileBlob(fpath, props.rootIndex)
+      if (isJson) {
+        failures.push({ name: row.name, message: data?.message || '下载失败' })
+        continue
+      }
+      const blob = await response.blob()
+      const url = URL.createObjectURL(blob)
+      const disposition = response.headers.get('content-disposition') || ''
+      const match = disposition.match(/filename\*=UTF-8''(.+?)(?:;|$)/)
+      const filename = match ? decodeURIComponent(match[1]) : row.name
+      const a = document.createElement('a')
+      a.href = url
+      a.download = filename
+      document.body.appendChild(a)
+      a.click()
+      document.body.removeChild(a)
+      URL.revokeObjectURL(url)
+      success++
+    } catch {
+      failures.push({ name: row.name, message: '网络错误' })
+    }
+  }
+
+  if (failures.length === 0) {
+    ElMessage.success(`已下载 ${success} 个`)
+  } else {
+    const reasons = [...new Set(failures.map(f => f.message))].join('；')
+    ElMessage.warning(`已下载 ${success} 个，${failures.length} 个失败：${reasons}`)
+  }
 }
 
 // 原有功能
@@ -367,12 +409,35 @@ function openDir(name) {
   emit('open-dir', name)
 }
 
-function downloadFile(row) {
-  const filePath = (props.currentPath === '/' ? '' : props.currentPath) + '/' + row.name
-  window.open(getDownloadUrl(filePath, props.rootIndex), '_blank')
+async function downloadFile(row) {
+  const fpath = (props.currentPath === '/' ? '' : props.currentPath) + '/' + row.name
+  try {
+    const { response, isJson, data } = await downloadFileBlob(fpath, props.rootIndex)
+    if (isJson) {
+      ElMessage.error(data?.message || '下载失败')
+      emit('retry')
+      return
+    }
+    // 二进制 → blob 下载
+    const blob = await response.blob()
+    const url = URL.createObjectURL(blob)
+    const disposition = response.headers.get('content-disposition') || ''
+    const match = disposition.match(/filename\*=UTF-8''(.+?)(?:;|$)/)
+    const filename = match ? decodeURIComponent(match[1]) : row.name
+    const a = document.createElement('a')
+    a.href = url
+    a.download = filename
+    document.body.appendChild(a)
+    a.click()
+    document.body.removeChild(a)
+    URL.revokeObjectURL(url)
+  } catch {
+    emit('retry')
+  }
 }
 
 async function confirmDelete(row) {
+  const dpath = (props.currentPath === '/' ? '' : props.currentPath) + '/' + row.name
   const type = row.isDirectory ? '文件夹' : '文件'
   try {
     await ElMessageBox.confirm(
@@ -380,27 +445,43 @@ async function confirmDelete(row) {
       '确认删除',
       { confirmButtonText: '删除', cancelButtonText: '取消', type: 'warning', confirmButtonClass: 'el-button--danger' }
     )
-    const filePath = (props.currentPath === '/' ? '' : props.currentPath) + '/' + row.name
-    const res = await deleteFile(filePath, props.rootIndex)
-    ElMessage.success(res.data.dest === 'permanent' ? '已永久删除（回收站不可用）' : '已移入回收站')
+    const res = await deleteFile(dpath, props.rootIndex)
+    if (!res.data.success) throw new Error(res.data.message)
+    ElMessage.success(res.data.message || (res.data.data?.dest === 'permanent' ? '已永久删除（回收站不可用）' : '已移入回收站'))
     emit('deleted')
-  } catch { /* cancelled */ }
+  } catch (e) {
+    if (e && e.message) {
+      // 后端返回的错误消息
+      ElMessage.error(e.message)
+    } else {
+      // 用户取消，记日志
+      fetch(apiUrl('/logs'), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ level: 'info', type: 4, data: { op: 0, file: dpath } })
+      }).catch(() => {})
+    }
+  }
 }
 
-function isLocalhost() {
-  const h = location.hostname
-  return h === 'localhost' || h === '127.0.0.1'
+// 只在壳（Tauri WebView2）里显示「打开」— 壳无法触发浏览器下载；浏览器（任何设备）→ 下载
+const isShell = computed(() => typeof window !== 'undefined' && !!window.__TAURI_INTERNALS__)
+
+function handleFileAction(row) {
+  const fpath = (props.currentPath === '/' ? '' : props.currentPath) + '/' + row.name
+  if (isShell.value) {
+    // POST /api/files/open 调系统默认程序打开
+    openFileRow(fpath)
+  } else {
+    downloadFile(row)
+  }
 }
 
 function handleRowClick(row) {
   if (row.isDirectory) {
     openDir(row.name)
-  } else if (isLocalhost()) {
-    // 本机（Tauri/浏览器）：POST /api/files/open 调系统默认程序打开
-    openFileRow(row.fullPath)
   } else {
-    // 其他设备：下载
-    downloadFile(row)
+    handleFileAction(row)
   }
 }
 </script>
