@@ -1,0 +1,6 @@
+{
+  "roots": [],
+  "port": 22580,
+  "max_file_size_mb": 500,
+  "show_hidden_files": false
+}

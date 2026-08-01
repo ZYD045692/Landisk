@@ -1,0 +1,9 @@
+{
+  "roots": [
+    "D:\\Desktop\\transfer\\test\\testdir\\testdira",
+    "D:\\Desktop\\transfer\\test\\testdir\\testdirb"
+  ],
+  "port": 22580,
+  "max_file_size_mb": 500,
+  "show_hidden_files": false
+}
