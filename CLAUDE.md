@@ -145,7 +145,7 @@ SPA，浏览路径存储在 URL query `?path=/根名/子路径`（**虚拟路径
 client/src/
 ├── api/index.js            # Axios 封装 + apiUrl helper，所有 API 函数集中于此
 ├── components/
-│   ├── FileTable.vue       # 文件列表 — PC 端 el-table / 移动端卡片，含搜索/排序/分页/删除；虚拟根行=打开+移除、批量栏=批量移除；壳内文件夹「打开」→资源管理器
+│   ├── FileTable.vue       # 文件列表 — PC 端 el-table / 移动端卡片，含搜索/排序/分页/删除；虚拟根行=打开+移除、批量栏=批量移除；壳内文件夹「打开」→资源管理器；**点击约定：行内点击仅文件夹进目录（openIfDirectory），打开/下载走操作列按钮**
 │   ├── UploadZone.vue      # 上传区域 + 冲突弹窗 + 进度条 + 全局拖拽监听
 │   ├── LogViewer.vue       # 服务器日志查看器 — 筛选/清除/SSE 实时推流
 │   ├── SettingsDialog.vue  # 设置弹窗 — 最大上传/显示隐藏/开机自启/日志目录/共享目录管理
