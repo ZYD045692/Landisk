@@ -63,6 +63,14 @@ cargo build --manifest-path src-tauri/server/Cargo.toml
 
 `npm run build:server` = ①+②；`npm run build:tauri` = ①+②+③+④。产物：`dist/LanDisk_*_x64-setup.exe`。
 
+### 版本号
+
+项目版本号在 **8 个位置**保持一致（package.json、client/package.json、tauri.conf.json、package-lock.json×2、两个 Cargo.toml、两个 Cargo.lock 的 landisk 包）。改版本号用一键脚本，不要手动逐个改：
+
+```bash
+node scripts/set-version.js 0.1.3   # 同步所有位置到指定版本（只改 landisk 自身，不动依赖）
+```
+
 ## 后端结构（Rust）
 
 ```

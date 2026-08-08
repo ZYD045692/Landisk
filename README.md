@@ -1,48 +1,78 @@
+<div align="center">
+
+<img src="images/icon.png" alt="LanDisk" width="96" />
+
 # LanDisk
 
-局域网文件快传 — 电脑、手机、平板在同一局域网下，扫码即连，拖拽传文件。
+局域网文件快传 — 桌面端装一个应用，手机/平板扫码即连，在电脑和移动设备之间拖拽传文件。
 
-无需数据线、无需登录、无需安装 App。
+</div>
+
+完整的新手使用教程见 [Landisk.md](Landisk.md)（从零开始，图文并茂，约五分钟上手）。
 
 ## 功能
 
-- 文件浏览、虚拟根目录（所有共享目录平铺展示）、面包屑导航
-- 虚拟根拖入文件夹直接添加共享目录（桌面应用），行内「移除」取消共享不删磁盘文件
-- 全局拖拽：目录内拖文件上传、虚拟根拖文件夹添加共享，毛玻璃全屏提示
-- 冲突弹窗：同名文件可选替换 / 保留两份 / 取消，支持批量统一操作
-- 文件列表刷新时逐格 shimmer 加载效果
-- 删除进回收站 / 永久删除（回收站不可用时自动 fallback）
-- 批量删除：多选 + 并行执行 + 百分比进度条
-- 批量下载：多选 + 逐项浏览器下载
-- 搜索：文件名过滤
-- 排序：名称 / 大小 / 时间 / 类型
-- 分页：5 / 10 / 20 / 50 条
+- 添加共享目录有两种方式：设置里输入路径，或直接把文件夹拖进主界面
+- 拖文件进目录 = 上传；拖文件夹进虚拟根 = 添加共享
+- 同名文件可替换 / 保留两份 / 取消，支持批量统一操作
+- 手机或平板扫码即连，能下载文件，也能把手机文件传回电脑
+- 文件搜索、排序（名称/大小/时间/类型）、分页
+- 删除进回收站可还原；批量操作带进度条
 - 70+ 种文件图标，彩色分类
-- 界面内嵌二维码，手机或平板扫码即连
-- 内置日志查看器：SSE 实时推送、等级过滤、文本搜索、清除、结构化 JSON
+- 内置日志查看器，实时更新，可过滤和搜索
 - 系统托盘，关闭窗口后台运行
-- 开机自启（静默托盘）
-- 单实例，多点图标不重复启动
-- 界面管理共享目录，持久化到 `config.json`
-- 点击文件可用系统默认程序打开；壳内点文件夹「打开」用 Windows 资源管理器打开
-- 中文文件名上传不乱码
-- 无共享目录时智能提示引导添加
+- 开机自启、单实例运行
 
-## 安装使用
+## 快速开始
 
-当前版本：**v0.1.2**
+1. 运行 `LanDisk_*_x64-setup.exe` 安装（从 [`dist/`](dist/) 获取）
+2. 打开应用，添加共享目录（设置里输入路径，或直接把文件夹拖进主界面）
+3. 手机或平板点右上角「扫码访问」，扫二维码即连
 
-1. 运行 `LanDisk_*_x64-setup.exe`（从 [`dist/`](dist/) 获取）
-2. 右上角 ⚙ 添加共享目录
-3. 点 📱 获取二维码，手机或平板扫码访问
+> [!TIP]
+> 第一次启动 Windows 防火墙会弹窗，选「允许访问」，否则其他设备连不上。
 
-| 操作 | 效果 |
+## 文档
+
+| 文档 | 作用 |
 |---|---|
-| 关闭窗口 | 隐藏到托盘 |
-| 双击托盘 | 显示窗口 |
-| 右键托盘 → 退出 | 完全退出 |
+| [Landisk.md](Landisk.md) | **用户手册** — 从零开始的图文使用教程（新手看这个） |
+| [CLAUDE.md](CLAUDE.md) | **开发工作手册** — 给 AI/协作者：改代码的约定、命令、坑 |
+| [LOG_FORMAT.md](LOG_FORMAT.md) | **日志格式** — 结构化日志的 type/op 完整码表 |
+| [TESTPLAN.md](TESTPLAN.md) | **测试计划** — 测试原则、用例明细、运行方式 |
+
+## 脚本
+
+**开发启动**
+
+| 脚本 | 作用 |
+|---|---|
+| `start-dev.bat` | 一键调试：杀旧进程 → 启动 Vite 热更新 + Tauri 壳 |
+
+**构建**
+
+| 脚本 | 作用 |
+|---|---|
+| `scripts/build-sidecar.js` | 编译 Rust 后端为 sidecar（`binaries/landisk-server.exe`） |
+| `scripts/copy-installer.js` | 把生成的安装包复制到 `dist/` 并清理临时产物 |
+| `scripts/set-version.js` | 一键同步项目版本号到全部 8 个位置（用法：`node scripts/set-version.js 0.1.3`） |
+
+**测试**（位于 `test/`）
+
+| 脚本 | 作用 |
+|---|---|
+| `test/setup.js` | 创建测试目录结构（每个测试运行前必须先执行） |
+| `test/verify.js` | 文件系统验证工具（断言用） |
+| `test/verify-clean.js` | 测试后清理 testdir/ + 检查配置残留 |
+| `test/server-mgr.js` | 测试用服务管理：自动构建前端 → 杀旧 → 起新 → 就绪 → 停止 |
+| `test/test-api.js` | API 功能测试（87 项） |
+| `test/test-crawl.js` | 爬虫功能测试（63 项），CDP 真实鼠标操作，双模式（网页端/桌面应用） |
+| `test/capture-screens.js` | 用 CDP 截图文档用图到 `images/` |
+| `test/cdp-wrapper.js` | CDP 辅助：注入 `nav` / `safe` / `cdpRaw` 等全局函数 |
 
 ## 架构
+
+一个 Rust 后端同时服务桌面端和移动端浏览器：
 
 ```
 ┌──────────────────────────────────────┐
@@ -55,11 +85,9 @@
 └───────────────────────────────────────┘
 ```
 
-PC、手机和平板访问的是同一个服务。
-
 ### 日志流转
 
-每次操作（上传 / 删除 / 下载 / 打开 / 共享目录 / 配置…）由前端发请求、后端 handler 处理后写入一条**结构化日志**，日志同时流向内存缓冲、文件和实时推流三个去处：
+每次操作（上传 / 删除 / 下载 / 打开 / 共享目录 / 配置）由前端发请求、后端处理，写入一条结构化日志，同时流向内存缓冲、文件和实时推流：
 
 ```mermaid
 flowchart TD
@@ -94,13 +122,11 @@ flowchart TD
     B4 -.->|"启动时回填最后 100 条"| B3
 ```
 
-- 日志**格式与 type/op 完整码表**见 [LOG_FORMAT.md](LOG_FORMAT.md)
-- 服务启动时自动从 `landisk.log` 末尾解析最后 **100 条** JSON 条目补入缓冲池，避免重启后日志查看器空白
-- 日志文件写入 `<数据目录>/logs/landisk.log`，超过 1 MB 或跨天时归档为 `landisk-{date}.log`
+日志格式与完整 type/op 码表见 [LOG_FORMAT.md](LOG_FORMAT.md)。
 
 ## 配置
 
-数据目录优先级：`LANDISK_DATA_DIR` 环境变量（dev/test 指向 `dev-data/`）→ 否则为程序（landisk-server.exe）所在目录。`config.json` 存于数据目录下，首次运行自动创建：
+配置文件 `config.json` 存于数据目录下（默认与程序同目录，可用 `LANDISK_DATA_DIR` 环境变量指定）：
 
 ```json
 {
@@ -111,13 +137,7 @@ flowchart TD
 }
 ```
 
-共享目录也可通过界面 ⚙ 增删，自动持久化到 `config.json`。
-
-## 注意事项
-
-- 设备需在同一局域网
-- 首次启动 Windows 防火墙会弹窗，**必须允许 LanDisk 服务访问网络**
-- 端口 `22580`
+多数配置可直接通过界面「设置」修改，自动持久化。
 
 ## 开发
 
@@ -128,14 +148,14 @@ npm install && cd client && npm install
 | 命令 | 说明 |
 |---|---|
 | `npm start` | Tauri 桌面开发模式 |
-| `start-dev.bat` | 一键调试（杀旧进程 → 构建前端 → Tauri + Vite） |
-| `npm run server` | Rust 后端直启 (:22580) |
-| `npm run dev` | cargo watch 自动重编译 |
+| `start-dev.bat` | 一键调试（杀旧进程 → Vite + Tauri） |
+| `npm run server` | 后端直启 (:22580)，服务前端静态文件 |
+| `npm run dev` | cargo watch 后端热重载 |
 
 ### 构建
 
 ```bash
-npm run build:tauri   # 一键构建安装包
+npm run build:tauri   # 构建前端 + 编译 sidecar + 打包安装包
 ```
 
 产物：`dist/LanDisk_0.1.2_x64-setup.exe`
@@ -147,12 +167,10 @@ node test/setup.js            # 创建测试数据
 node test/test-api.js         # API 测试（87 项）
 node test/setup.js            # 重建测试数据
 node -r ./test/cdp-wrapper.js test/test-crawl.js   # 爬虫测试（63 项）
-node -r ./test/cdp-wrapper.js test/capture-screens.js  # 生成文档截图到 images/
 ```
 
-API 和爬虫测试**自动管理后端服务**（开始自动杀旧起新、结束自动关闭），无需手动 `npm run server`。测试前需先构建前端（`npm run build:server`）保证 `client/dist` 是最新。
-
-> 完整测试计划、双维度验证原则与测试项明细见 [TESTPLAN.md](TESTPLAN.md)。
+> [!NOTE]
+> API 和爬虫测试自动管理后端服务（开始自动杀旧起新、结束自动关闭），无需手动 `npm run server`。完整测试计划见 [TESTPLAN.md](TESTPLAN.md)。
 
 ## 项目结构
 
@@ -163,7 +181,7 @@ API 和爬虫测试**自动管理后端服务**（开始自动杀旧起新、结
 │       ├── components/  # FileTable, UploadZone, LogViewer, SettingsDialog
 │       ├── utils/       # format.js (图标/大小/日期), logFormat.js (日志解析)
 │       └── views/       # FileBrowser.vue
-├── src-tauri/           # Tauri + Rust 后端
+├── src-tauri/           # Tauri 壳 + Rust 后端
 │   ├── src/
 │   │   └── lib.rs       # 窗口/托盘/sidecar 管理
 │   └── server/src/
