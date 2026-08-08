@@ -115,18 +115,31 @@ export function updateConfig(data) {
 /**
  * 用 fetch 下载文件（支持 JSON 错误检测，虚拟路径）
  * @param {string} filePath - 虚拟文件路径
- * @returns {Promise<{response: Response, isJson: boolean, data: any}>}
+ * @returns {Promise<{response: Response, isError: boolean, data: any}>}
  */
 export async function downloadFileBlob(filePath) {
   const url = `${apiUrl('/download')}?path=${encodeURIComponent(filePath)}`
   const response = await fetch(url)
-  const ct = response.headers.get('content-type') || ''
-  const isJson = ct.includes('json')
+  // 后端错误统一用 HTTP 200 + JSON {success:false} 返回（见 err_json），
+  // 所以不能看 HTTP 状态码，也不能看 content-type（.json 文件下载也是 application/json）。
+  // 正确做法：读一份克隆判断是否为错误响应；是则返回 isError，否则原响应留给 blob 下载。
+  let isError = false
   let data = null
-  if (isJson) {
-    data = await response.json()
+  const ct = response.headers.get('content-type') || ''
+  if (ct.includes('json')) {
+    const clone = response.clone()
+    const text = await clone.text()
+    try {
+      const parsed = JSON.parse(text)
+      if (parsed && parsed.success === false) {
+        isError = true
+        data = parsed
+      }
+    } catch {
+      // 内容不是合法 JSON → 正常文件（如 .json 文件内容为非 JSON 文本），走 blob 下载
+    }
   }
-  return { response, isJson, data }
+  return { response, isError, data }
 }
 
 export default api
