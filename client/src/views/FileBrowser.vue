@@ -1,18 +1,5 @@
 <template>
   <div class="file-browser">
-    <!-- 根目录切换（多根目录时显示） -->
-    <div v-if="roots.length > 1" class="root-switcher">
-      <span class="switch-label">共享目录：</span>
-      <el-select v-model="activeRoot" size="small" style="max-width: 280px" @change="onRootChange">
-        <el-option
-          v-for="(root, idx) in roots"
-          :key="root.path"
-          :label="root.name"
-          :value="idx"
-        />
-      </el-select>
-    </div>
-
     <!-- 面包屑导航 -->
     <BreadcrumbNav
       :current-path="currentPath"
@@ -20,7 +7,7 @@
     />
 
     <!-- 无共享目录时提示 -->
-    <div v-if="roots.length === 0" class="no-roots-hint">
+    <div v-if="roots.length === 0">
       <el-empty description="暂无共享目录" :image-size="100">
         <template #description>
           <p style="margin:0 0 8px;color:#606266;font-weight:500;font-size:14px">请先添加共享目录</p>
@@ -29,12 +16,15 @@
       </el-empty>
     </div>
 
-    <!-- 上传区域 -->
+    <!-- 虚拟根提示：两端都显示，注明是桌面应用功能（浏览器拖入会给引导提示） -->
+    <div v-if="isVirtualRoot && roots.length > 0" class="virtual-root-hint">
+      在桌面应用中拖入文件夹可添加共享目录
+    </div>
+
+    <!-- 上传区域（仅真实目录内） -->
     <UploadZone
-      v-if="roots.length > 0"
+      v-if="roots.length > 0 && !isVirtualRoot"
       :upload-path="currentPath"
-      :root-index="activeRoot"
-      :root-path="(roots[activeRoot] || {}).path || ''"
       @uploaded="onUploaded"
     />
 
@@ -45,8 +35,6 @@
       :loading="loading"
       :error="error"
       :current-path="currentPath"
-      :root-index="activeRoot"
-      :root-path="(roots[activeRoot] || {}).path || ''"
       :pin-top="pinnedNames"
       @open-dir="openDirectory"
       @retry="loadDirectory"
@@ -56,7 +44,7 @@
 </template>
 
 <script setup>
-import { ref, onMounted, watch, inject } from 'vue'
+import { ref, computed, onMounted, watch, inject } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { fetchFiles, apiUrl } from '../api'
 import { ElMessage } from 'element-plus'
@@ -74,104 +62,67 @@ const error = ref('')
 const pinnedNames = ref([])
 const roots = inject('roots', ref([]))
 const refreshFilesKey = inject('refreshFilesKey', ref(0))
-const activeRoot = ref(0)
+
+// 虚拟根目录：无上传目标，隐藏上传区，拖入文件夹添加共享
+const isVirtualRoot = computed(() => currentPath.value === '/' || currentPath.value === '')
 
 onMounted(() => {
-  // 无共享目录时清除查询参数
-  if (!roots.value || roots.value.length === 0) {
-    if (route.query.path || route.query.root !== undefined) {
-      router.replace('/')
-    }
-    loadDirectory()
-    return
-  }
+  // 直接以 URL 进入某个根目录（刷新/书签）也记一次「进入根目录」
+  // 注意：roots 可能尚未从 API 加载完（初始为空），不能据此清路径——等 watch(roots) 加载完再决定
   const qp = route.query.path
   if (qp) {
     currentPath.value = qp.startsWith('/') ? qp : '/' + qp
   }
-  const rp = route.query.root
-  if (rp !== undefined) {
-    activeRoot.value = parseInt(rp) || 0
-  }
+  logEnterRoot('/', currentPath.value)
   loadDirectory()
 })
 
-// 显示隐藏文件变化时完整刷新（含骨架遮罩）
+// 显示隐藏文件变化时完整刷新（含骨架遮罩）——空目录（仅隐藏文件被过滤）也必须刷新，否则切换开关看不到隐藏文件出现
 watch(refreshFilesKey, () => {
-  if (entries.value.length > 0) loadDirectory()
+  loadDirectory()
 })
 
-// 根目录变化时：处理移除后的索引变化
-watch(roots, (val, old) => {
+// 根目录被移除时：当前路径指向已移除的根 → 回虚拟根
+watch(roots, (val) => {
   if (val.length === 0) {
-    activeRoot.value = 0
     currentPath.value = '/'
     entries.value = []
-    if (route.query.path || route.query.root !== undefined) {
-      router.replace('/')
-    }
+    if (route.query.path) router.replace('/')
     return
   }
-
-  // 获取变化前正在浏览的根目录路径
-  const prevRootPath = old?.[activeRoot.value]?.path
-  if (prevRootPath) {
-    const newIdx = val.findIndex(r => r.path === prevRootPath)
-    if (newIdx === -1) {
-      // 当前根被移除了 → 重置到第一个
-      activeRoot.value = 0
-      currentPath.value = '/'
-      router.push({ query: { path: '/', root: 0 } })
-      loadDirectory()
-      return
-    }
-    if (newIdx !== activeRoot.value) {
-      // 当前根还在但索引变了（前面的根被移除导致数组左移）
-      activeRoot.value = newIdx
-      router.push({ query: { path: currentPath.value, root: newIdx } })
-      return
-    }
-  }
-
-  // 索引超出新数组长度 → 回退
-  if (activeRoot.value >= val.length) {
-    activeRoot.value = 0
+  const rootName = currentPath.value.split('/').filter(Boolean)[0]
+  if (rootName && !val.some(r => r.name === rootName)) {
     currentPath.value = '/'
-    router.push({ query: { path: '/', root: 0 } })
-    loadDirectory()
-    return
-  }
-
-  loadDirectory()
-})
-
-// 监听路由 query 变化（path 或 root）
-watch(() => [route.query.path, route.query.root], ([newPath, newRoot]) => {
-  if (newRoot !== undefined) {
-    activeRoot.value = parseInt(newRoot) || 0
-  }
-  if (newPath) {
-    currentPath.value = newPath.startsWith('/') ? newPath : '/' + newPath
-  } else {
-    currentPath.value = '/'
+    router.push({ query: { path: '/' } })
   }
   loadDirectory()
 })
 
-// 上传完成后：静默拉取新列表，并把上传的文件排到最前
-function onUploaded(newNames) {
+// 监听路由 query 变化（虚拟路径）—— 应用内点击 / 浏览器前进后退 / URL 变更统一在这里记「进入根目录」日志
+watch(() => route.query.path, (newPath, oldPath) => {
+  const prev = (oldPath === undefined || oldPath === null || oldPath === '') ? '/' : oldPath
+  const next = (newPath && newPath.startsWith('/') ? newPath : '/' + (newPath || ''))
+  currentPath.value = next
+  logEnterRoot(prev, next)
+  loadDirectory()
+})
+
+async function onUploaded(newNames) {
   pinnedNames.value = newNames || []
   loadDirectory()
 }
 
-function onRootChange() {
-  router.push({ query: { path: '/', root: activeRoot.value } })
-  const name = roots.value[activeRoot.value]?.name || '未知'
-  fetch(apiUrl('/logs'), {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ level: 'info', type: 10, data: { op: 2, dir: name } })
-  }).catch(() => {})
+// 从虚拟根（fromPath）进入某个根目录（toPath）时记录日志（type=10 op=2）
+function logEnterRoot(fromPath, toPath) {
+  const fromRoot = fromPath === '/' || fromPath === ''
+  const parts = (toPath || '').replace(/\/+$/, '').split('/').filter(Boolean)
+  if (fromRoot && parts.length >= 1) {
+    fetch(apiUrl('/logs'), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ level: 'info', type: 10, data: { op: 2, dir: parts[0] } })
+    }).catch(() => {})
+  }
 }
 
 async function loadDirectory() {
@@ -189,11 +140,11 @@ async function loadDirectory() {
   const startTime = Date.now()
 
   try {
-    const res = await fetchFiles(currentPath.value, activeRoot.value)
+    const res = await fetchFiles(currentPath.value)
     if (!res.data.success) {
       ElMessage.warning(res.data.message)
       const parent = currentPath.value.replace(/\/+$/, '').replace(/\/[^/]+$/, '') || '/'
-      router.push({ query: { path: parent, root: activeRoot.value } })
+      router.push({ query: { path: parent } })
       return
     }
     entries.value = res.data.data.isDirectory ? res.data.data.entries : []
@@ -216,7 +167,7 @@ async function refreshDirectory() {
   error.value = ''
 
   try {
-    const res = await fetchFiles(currentPath.value, activeRoot.value)
+    const res = await fetchFiles(currentPath.value)
     if (res.data.success && res.data.data?.isDirectory) {
       entries.value = res.data.data.entries
     }
@@ -226,14 +177,14 @@ async function refreshDirectory() {
 }
 
 async function navigateTo(path) {
-  router.push({ query: { path, root: activeRoot.value } })
+  router.push({ query: { path } })
 }
 
 async function openDirectory(name) {
   let newPath = currentPath.value
   if (!newPath.endsWith('/')) newPath += '/'
   newPath += name
-  router.push({ query: { path: newPath, root: activeRoot.value } })
+  router.push({ query: { path: newPath } })
 }
 </script>
 
@@ -244,18 +195,13 @@ async function openDirectory(name) {
   gap: 12px;
 }
 
-.root-switcher {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 4px 0;
-}
-
-.switch-label {
+.virtual-root-hint {
+  padding: 8px 12px;
+  border: 1px dashed #dcdfe6;
+  border-radius: 8px;
+  background: #fff;
+  color: #909399;
   font-size: 13px;
-  font-weight: 500;
-  line-height: 28px;
-  color: #606266;
-  white-space: nowrap;
+  text-align: center;
 }
 </style>

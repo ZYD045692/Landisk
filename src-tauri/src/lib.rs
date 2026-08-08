@@ -97,21 +97,28 @@ fn ensure_server(app: &tauri::AppHandle, port: u16) -> Option<u32> {
         eprintln!("[信息] 尝试 node 回退...");
     }
 
-    // Dev fallback: 尝试 sidecar
-    let sidecar_path = PathBuf::from("binaries/landisk-server-x86_64-pc-windows-msvc.exe");
-    let static_dir_dev = std::env::current_dir()
-        .unwrap_or_default()
-        .parent()
-        .map(|p| p.join("client").join("dist"))
-        .unwrap_or_else(|| PathBuf::from("../client/dist"));
+    // Dev fallback: 尝试 sidecar（路径相对 exe 所在目录解析，不依赖 CWD；
+    // 避免被开机自启/快捷方式以 System32 为 CWD 拉起时找不到 binaries/client/dist/dev-data）
+    let exe_dir = std::env::current_exe().ok().and_then(|p| p.parent().map(|d| d.to_path_buf()));
+    // 项目根 = exe_dir 上溯三级（target/{debug,release} → 仓库根），canonicalize 归一化 ".."
+    // Windows canonicalize 返回 `\\?\` 前缀的 verbatim 路径，去掉它避免传给 sidecar 的路径带 `\\?\`
+    let project_root = exe_dir
+        .as_deref()
+        .map(|d| d.join("..").join("..").join(".."))
+        .and_then(|p| std::fs::canonicalize(&p).ok())
+        .map(|p| {
+            let s = p.to_string_lossy();
+            let s = s.strip_prefix(r"\\?\").unwrap_or(&s);
+            PathBuf::from(s.to_string())
+        })
+        .unwrap_or_else(|| PathBuf::from("."));
+    let sidecar_path = project_root
+        .join("src-tauri").join("binaries").join("landisk-server-x86_64-pc-windows-msvc.exe");
+    let static_dir_dev = project_root.join("client").join("dist");
     let static_arg = format!("--static-dir={}", static_dir_dev.to_string_lossy());
 
-    // dev 模式下配置写到项目根目录 dev-data/，避免 Tauri 文件监听死循环
-    let data_dir = std::env::current_dir()
-        .unwrap_or_default()
-        .parent()
-        .map(|p| p.join("dev-data"))
-        .unwrap_or_else(|| PathBuf::from("../dev-data"));
+    // dev 模式下配置写到项目根目录 dev-data/
+    let data_dir = project_root.join("dev-data");
     eprintln!("[启动] sidecar (dev): {}", sidecar_path.display());
     eprintln!("[启动] 静态目录: {}", static_dir_dev.display());
     eprintln!("[启动] 数据目录: {}", data_dir.display());
@@ -197,7 +204,6 @@ pub fn run() {
             .min_inner_size(820.0, 500.0)
             .resizable(true)
             .center()
-            .disable_drag_drop_handler()
             .initialization_script(&init_js)
             .build()?;
 
@@ -263,9 +269,39 @@ pub fn run() {
             Ok(())
         })
         .on_window_event(|window, event| {
-            if let WindowEvent::CloseRequested { api, .. } = event {
-                api.prevent_close();
-                let _ = window.hide();
+            match event {
+                WindowEvent::CloseRequested { api, .. } => {
+                    api.prevent_close();
+                    let _ = window.hide();
+                }
+                // 壳内原生拖拽：Tauri 接管 OS 拖拽事件（DOM dragover/drop 不再触发），
+                // 把绝对路径 + isDir 通过 eval 派发 DOM CustomEvent 给前端（landisk-drop / landisk-dragover）
+                WindowEvent::DragDrop(dd) => {
+                    let js = match dd {
+                        tauri::DragDropEvent::Drop { paths, .. } => {
+                            let payload: Vec<serde_json::Value> = paths.iter().map(|p| {
+                                serde_json::json!({ "path": p.to_string_lossy().to_string(), "isDir": p.is_dir() })
+                            }).collect();
+                            format!(
+                                "window.dispatchEvent(new CustomEvent('landisk-drop',{{detail:{}}}));window.dispatchEvent(new CustomEvent('landisk-dragover',{{detail:false}}));",
+                                serde_json::to_string(&payload).unwrap_or_else(|_| "[]".to_string())
+                            )
+                        }
+                        tauri::DragDropEvent::Enter { .. } | tauri::DragDropEvent::Over { .. } => {
+                            "window.dispatchEvent(new CustomEvent('landisk-dragover',{detail:true}));".to_string()
+                        }
+                        tauri::DragDropEvent::Leave => {
+                            "window.dispatchEvent(new CustomEvent('landisk-dragover',{detail:false}));".to_string()
+                        }
+                        _ => String::new(),
+                    };
+                    if !js.is_empty() {
+                        if let Some(wv) = window.get_webview_window("main") {
+                            let _ = wv.eval(js);
+                        }
+                    }
+                }
+                _ => {}
             }
         })
         .run(tauri::generate_context!())

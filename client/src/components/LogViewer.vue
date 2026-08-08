@@ -26,14 +26,16 @@
               <template v-if="showSummary(entry)">
                 <div class="log-summary">
                   <template v-if="showSummary(entry) && typeof showSummary(entry) === 'object'">
-                    <span class="log-op">{{ showSummary(entry).op }}</span>{{ showSummary(entry).text }}
+                    <span class="log-op" v-html="opHtml(showSummary(entry).op)"></span>{{ showSummary(entry).text }}
                   </template>
                   <template v-else>{{ showSummary(entry) }}</template>
                 </div>
-                <div v-for="(f, j) in showFiles(entry)" :key="j" class="log-file">
-                  <template v-if="typeof f === 'object'"><span class="log-file-indent"></span>{{ f.text || f.name || '' }}<template v-if="f.size"> {{ f.size }}</template></template>
-                  <template v-else>{{ f }}</template>
-                </div>
+                <template v-for="(f, j) in showFiles(entry)" :key="j">
+                  <div v-if="(typeof f === 'object' ? (f.text || f.name || '') : String(f || '')).trim() !== ''" class="log-file">
+                    <template v-if="typeof f === 'object'"><span class="log-file-indent"></span>{{ f.text || f.name || '' }}<template v-if="f.size"> {{ f.size }}</template></template>
+                    <template v-else>{{ f }}</template>
+                  </div>
+                </template>
               </template>
               <template v-else>
                 {{ entry.message || '' }}
@@ -72,6 +74,17 @@ function tsDate(ts) { return ts ? ts.substring(0, 10) + ' ' : '' }
 
 function tsTime(ts) { return ts ? ts.substring(11, 16) : '' }
 function tsSec(ts) { return ts ? ts.substring(16, 19) : '' }
+
+// 2 字标签（[新增] 等）在括号内插入 user-select:none 的全角空格 → [新　增]，与 [根目录] 视觉等宽；
+// 空格被标记为不可选中，拖选/复制日志时不会带出来（只占视觉宽度，不属于可复制文本）
+function opHtml(op) {
+  const s = String(op || '')
+  const m = s.match(/^\[(.+)\]$/)
+  if (m && m[1].length === 2) {
+    return `[${m[1][0]}<span style="user-select:none">　</span>${m[1][1]}]`
+  }
+  return s
+}
 
 const filteredLogs = computed(() => {
   let result = logEntries.value
@@ -147,8 +160,18 @@ function stopEventSource() {
 }
 
 async function handleClearDisplay() {
-  try { await clearLogDisplay() } catch {}
-  logEntries.value = []
+  try {
+    await clearLogDisplay()
+    logEntries.value = []
+    ElMessage.success('已清空显示')
+  } catch {
+    ElMessage.error('清空失败')
+    fetch(apiUrl('/logs'), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ level: 'error', type: 11, data: { op: 2, error: '清空显示失败' } })
+    }).catch(() => {})
+  }
 }
 
 async function handleClearLogs() {
@@ -158,11 +181,27 @@ async function handleClearLogs() {
       cancelButtonText: '取消',
       type: 'warning'
     })
-  } catch { return }
+  } catch {
+    // 用户取消清空日志 → 记「已取消」（type=11 op=0，前端写入）
+    fetch(apiUrl('/logs'), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ level: 'info', type: 11, data: { op: 0 } })
+    }).catch(() => {})
+    return
+  }
   try {
     await clearLogs()
     logEntries.value = []
-  } catch {}
+    ElMessage.success('已清空日志')
+  } catch {
+    ElMessage.error('清空失败')
+    fetch(apiUrl('/logs'), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ level: 'error', type: 11, data: { op: 1, error: '清空失败' } })
+    }).catch(() => {})
+  }
 }
 
 function onLogsClose() {
@@ -227,8 +266,8 @@ function onLogsClose() {
 .log-level { flex-shrink: 0; width: 52px; text-align: center; border-radius: 2px; font-size: 11px; font-weight: 600; }
 .log-msg { color: #d1d5db; flex: 1; min-width: 0; white-space: pre-wrap; word-break: break-word; line-height: 1.25; }
 .log-summary { line-height: 1.25; }
-.log-op { display: inline-block; min-width: 5em; }
-.log-file-indent { display: inline-block; min-width: 5em; }
+.log-op { display: inline-block; width: 5em; text-align: center; }
+.log-file-indent { display: inline-block; width: 5em; }
 
 .log-level-info { color: #60a5fa; background: rgba(96,165,250,0.12); }
 .log-level-warn { color: #fbbf24; background: rgba(251,191,36,0.12); }

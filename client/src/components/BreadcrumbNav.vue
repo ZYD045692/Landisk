@@ -4,7 +4,7 @@
       <el-breadcrumb-item>
         <a href="#" @click.prevent="navigate('/')" :class="{ 'root-only': isRootOnly }">
           <el-icon><HomeFilled /></el-icon>
-          <span class="breadcrumb-label">根目录</span>
+          <span class="breadcrumb-label">Home</span>
         </a>
       </el-breadcrumb-item>
       <el-breadcrumb-item v-for="(part, index) in pathParts" :key="index">

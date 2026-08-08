@@ -2,7 +2,7 @@
   <el-container
     class="app-container"
     :class="{ 'global-dragover': globalDragover }"
-    @dragover.prevent="globalDragover = true"
+    @dragover.prevent="setDragover(true)"
     @drop.prevent="onGlobalDrop"
   >
     <el-header class="app-header" height="56px">
@@ -50,7 +50,7 @@
         <div class="drop-icon-word"><span></span></div>
         <img class="drop-icon-chart" :src="picIcon" />
       </div>
-      <p class="drop-text">拖拽文件到此处上传</p>
+      <p class="drop-text">{{ dropOverlayText }}</p>
     </div>
 
     <el-main class="app-main">
@@ -76,17 +76,19 @@
     </el-main>
 
     <el-footer class="app-footer" height="32px">
-      <span>LanDisk · 内网文件服务</span>
+      <span>LanDisk · 局域网文件共享</span>
     </el-footer>
   </el-container>
 </template>
 
 <script setup>
-import { ref, onMounted, onUnmounted, provide } from 'vue'
+import { ref, computed, onMounted, onUnmounted, provide } from 'vue'
+import { useRoute } from 'vue-router'
 // 图标全部使用自定义 SVG，不再从 element-plus/icons-vue 导入
 import QRCode from 'qrcode'
 import api from './api'
-import { fetchRoots } from './api'
+import { fetchRoots, addRoot } from './api'
+import { isShell } from './utils/env'
 import xIcon from './assets/letter-x.svg'
 import picIcon from './assets/picture.svg'
 import SettingsDialog from './components/SettingsDialog.vue'
@@ -96,13 +98,17 @@ const roots = ref([])
 const showQR = ref(false)
 const serverUrl = ref('')
 const qrDataUrl = ref('')
-// 本机判断：先用壳/localhost 猜，server-info 返回后按后端来源 IP 精确校正
-const isLocal = ref(
-  (typeof window !== 'undefined' && window.__TAURI_INTERNALS__) ||
-  (typeof location !== 'undefined' && (location.hostname === 'localhost' || location.hostname === '127.0.0.1'))
-)
 const settings = ref(null)
 const logViewer = ref(null)
+
+const route = useRoute()
+// 虚拟根目录：URL ?path=/（或空）时，拖入文件夹 = 添加共享目录
+const isVirtualRoot = computed(() => {
+  const p = route.query.path
+  return !p || p === '/' || p === ''
+})
+// 全局拖拽遮罩文案：虚拟根提示添加共享，真实目录提示上传
+const dropOverlayText = computed(() => isVirtualRoot.value ? '拖入文件夹，添加共享目录' : '拖拽文件到此处上传')
 
 async function loadRoots() {
   try {
@@ -111,14 +117,154 @@ async function loadRoots() {
   } catch { roots.value = [] }
 }
 provide('roots', roots)
-provide('isLocal', isLocal)
 
 const globalDragover = ref(false)
 const droppedFiles = ref(null)
 
+// 全局拖拽遮罩开关：浏览器虚拟根直接禁掉（拿不到绝对路径、拖文件夹加共享目录只在桌面应用可用）
+function setDragover(v) {
+  if (v && isVirtualRoot.value && !isShell.value) return
+  globalDragover.value = v
+}
+
 function onGlobalDrop(e) {
   globalDragover.value = false
-  droppedFiles.value = e.dataTransfer.files
+  if (isVirtualRoot.value) {
+    // 浏览器虚拟根：拖入文件夹添加共享目录只在桌面应用可用 → 提示引导，避免操作习惯不同步
+    if (!isShell.value) {
+      ElMessage.info('请在桌面应用中拖入文件夹添加共享目录，或到右上角设置中添加')
+      return
+    }
+    handleVirtualRootDrop(e.dataTransfer.files)
+  } else {
+    // 立即转成普通数组再存：dataTransfer.files 是活的 FileList，事件结束后引用可能失效
+    // （尤其浏览器拖入、或手工构造 DataTransfer 时），watch 异步读取会拿到不完整列表
+    droppedFiles.value = Array.from(e.dataTransfer.files)
+  }
+}
+
+// 虚拟根下 DOM 拖入：文件夹 → 添加为共享目录（仅桌面应用可达，浏览器已在 onGlobalDrop 拦截）。
+// WebView2 不暴露 File.path，壳内 DOM drop 已被 Tauri 原生拖拽接管（走 landisk-drop），这里静默
+async function handleVirtualRootDrop(fileList) {
+  const files = Array.from(fileList || [])
+  if (files.length === 0) return
+  const items = files.filter(f => f.path).map(f => ({ path: String(f.path), name: f.name }))
+  if (items.length > 0) await addRootsFromPaths(items)
+}
+
+// 按绝对路径添加共享根 —— 壳内 landisk-drop 事件与浏览器带 .path 的 DOM 拖拽共用
+async function addRootsFromPaths(items) {
+  if (!items || items.length === 0) return
+  const errors = []
+  for (const it of items) {
+    const dirPath = String(it.path).replace(/[\\/]+$/, '')
+    const baseName = dirPath.split(/[\\/]/).pop() || it.name || ''
+    // 普通文件不能作为共享目录 → 调后端让后端记 type=7 op=3「路径不是目录」，跳过改名弹窗
+    if (it.isDir === false) {
+      try {
+        const res = await addRoot(dirPath, baseName)
+        if (!res.data.success) throw { response: { data: res.data } }
+      } catch (err) {
+        errors.push(err.response?.data?.message || `「${baseName}」无法添加为共享目录`)
+      }
+      continue
+    }
+    // 已在共享列表 → 仍调后端，让后端记 type=7 op=3「已在共享列表中」再返回错误
+    if (roots.value.some(r => r.path.toLowerCase() === dirPath.toLowerCase())) {
+      try {
+        const res = await addRoot(dirPath, baseName)
+        if (!res.data.success) throw { response: { data: res.data } }
+      } catch (err) {
+        errors.push(err.response?.data?.message || `「${baseName}」已在共享列表中`)
+      }
+      continue
+    }
+    // 名称重名 → 弹窗让用户改名
+    let name = baseName
+    if (roots.value.some(r => r.name.toLowerCase() === baseName.toLowerCase())) {
+      name = await promptRootName(baseName)
+      if (!name) {
+        // 用户取消改名 → 记「添加已取消」（type=7 op=5，前端写入）
+        api.post('/logs', { level: 'info', type: 7, data: { op: 5, dir: dirPath, action: 'add' } }).catch(() => {})
+        continue
+      }
+    }
+    try {
+      const res = await addRoot(dirPath, name)
+      if (!res.data.success) throw { response: { data: res.data } }
+      roots.value = res.data.data?.roots || roots.value
+      ElMessage.success(`已添加共享目录「${name}」`)
+    } catch (err) {
+      errors.push(err.response?.data?.message || err.message || '添加失败')
+    }
+  }
+  if (errors.length > 0) {
+    ElMessage.error(errors.join('；'))
+  }
+}
+
+// 壳内 Tauri 原生拖拽事件（Rust on_drag_drop_event eval 派发的 DOM CustomEvent）
+async function handleShellDrop(items) {
+  globalDragover.value = false
+  if (!isShell.value || !items || items.length === 0) return
+  if (isVirtualRoot.value) {
+    // 不按 isDir 过滤：普通文件也进 addRootsFromPaths，由后端以「路径不是目录」拒绝并记 type=7 op=3
+    await addRootsFromPaths(items.filter(it => it && it.path))
+    return
+  }
+  // 真实目录：把绝对路径经 asset 协议转成 File 上传，保住进度条/冲突弹窗
+  const tauri = window.__TAURI_INTERNALS__
+  if (typeof tauri?.convertFileSrc !== 'function') {
+    ElMessage.info('当前环境无法读取本地文件路径，请在浏览器中选择文件上传')
+    return
+  }
+  const files = []
+  const skippedDirs = []
+  for (const it of items) {
+    if (it.isDir) {
+      skippedDirs.push(String(it.path).replace(/[\\/]+$/, '').split(/[\\/]/).pop() || it.path)
+      continue
+    }
+    try {
+      const blob = await fetch(tauri.convertFileSrc(it.path)).then(r => r.blob())
+      const name = String(it.path).replace(/[\\/]+$/, '').split(/[\\/]/).pop() || 'file'
+      files.push(new File([blob], name))
+    } catch (e) {
+      const name = String(it.path).replace(/[\\/]+$/, '').split(/[\\/]/).pop() || '文件'
+      ElMessage.error(`读取文件失败：${name}`)
+      api.post('/logs', { level: 'error', type: 1, data: { op: 2, file: name, error: '读取文件失败' } }).catch(() => {})
+    }
+  }
+  // 拖入的文件夹不能上传 → 提示 + 记 type=1 op=2（前端写入例外）
+  if (skippedDirs.length > 0) {
+    ElMessage.warning(`不支持上传文件夹：${skippedDirs.join('、')}`)
+    api.post('/logs', { level: 'warn', type: 1, data: { op: 2, file: skippedDirs.join(','), error: '不支持上传文件夹' } }).catch(() => {})
+  }
+  if (files.length > 0) droppedFiles.value = files
+}
+
+// 重名时弹窗输入新名称，预填递增不冲突的建议名（xxx (2)、xxx (3)…）
+async function promptRootName(baseName) {
+  let suggestion = baseName
+  const taken = new Set(roots.value.map(r => r.name.toLowerCase()))
+  let i = 2
+  do { suggestion = `${baseName} (${i++})` } while (taken.has(suggestion.toLowerCase()))
+  try {
+    const { value } = await ElMessageBox.prompt(
+      `文件夹名「${baseName}」已存在，请输入新名称：`,
+      '共享目录重名',
+      {
+        inputValue: suggestion,
+        inputPlaceholder: '新名称',
+        confirmButtonText: '添加',
+        cancelButtonText: '取消',
+        inputValidator: v => (v && v.trim() ? true : '名称不能为空')
+      }
+    )
+    return (value || '').trim()
+  } catch {
+    return null
+  }
 }
 provide('droppedFiles', droppedFiles)
 const refreshFilesKey = ref(0)
@@ -134,7 +280,6 @@ async function tryConnect(retries = 5) {
     const res = await api.get('/server-info')
     serverUrl.value = res.data.url
     qrDataUrl.value = await QRCode.toDataURL(res.data.url, { width: 200, margin: 1 })
-    isLocal.value = res.data.local === true
     serverDown.value = false
     serverRetrying.value = false
     loadRoots()
@@ -150,11 +295,14 @@ async function tryConnect(retries = 5) {
 
 onMounted(() => {
   tryConnect()
-  window.addEventListener('dragover', (e) => { e.preventDefault(); globalDragover.value = true })
+  window.addEventListener('dragover', (e) => { e.preventDefault(); setDragover(true) })
   window.addEventListener('dragleave', (e) => {
     if (e.clientX <= 0 || e.clientY <= 0) globalDragover.value = false
   })
   window.addEventListener('drop', (e) => { globalDragover.value = false })
+  // 壳内 Tauri 原生拖拽（Rust on_drag_drop_event eval 派发的 DOM CustomEvent）
+  window.addEventListener('landisk-dragover', (e) => { globalDragover.value = !!e.detail })
+  window.addEventListener('landisk-drop', (e) => { handleShellDrop(e.detail) })
 })
 
 onUnmounted(() => {

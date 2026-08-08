@@ -102,19 +102,16 @@ async function main() {
       await sleep(800);
     }
 
-    // 刷新页面加载根目录
-    await nav(`${BASE}/?path=/&root=0`);
+    // 刷新页面加载虚拟根
+    await nav(`${BASE}/?path=/`);
     await sleep(3000);
 
-    // ════════════ 09 多根目录切换 ════════════
-    await cdpClick('.root-switcher .el-select__wrapper');
-    await sleep(1200);
-    await shot('09-root-switch.png');
-    // 选 testdira 关闭下拉
-    await cdpClickText('.el-select-dropdown__item', 'testdira');
-    await sleep(1200);
+    // ════════════ 09 虚拟根目录（列出所有共享目录） ════════════
+    await shot('09-virtual-root.png');
 
     // ════════════ 10 面包屑导航 ════════════
+    await safe(clickFolder('testdira'));
+    await sleep(2000);
     await safe(clickFolder('testa'));
     await sleep(2000);
     await safe(clickFolder('subdir'));

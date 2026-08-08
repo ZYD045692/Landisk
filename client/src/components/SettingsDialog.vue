@@ -12,7 +12,7 @@
           <span class="setting-label">显示隐藏文件</span>
           <el-switch v-model="configShowHidden" size="large" @change="handleHiddenChanged" />
         </div>
-        <div v-if="isTauri()" class="setting-row">
+        <div v-if="isShell" class="setting-row">
           <span class="setting-label">开机自启</span>
           <el-switch v-model="autoStart" size="large" @change="handleAutoStart" />
         </div>
@@ -36,16 +36,28 @@
             <span class="root-name">{{ root.name }}</span>
             <span class="root-path">{{ root.path }}</span>
           </div>
-          <el-button type="danger" plain @click="handleRemoveRoot(root.path)">
-            移除
-          </el-button>
+          <div class="root-actions">
+            <el-button size="small" plain @click="openRenameDialog(root)">重命名</el-button>
+            <el-button size="small" type="danger" plain @click="handleRemoveRoot(root.path)">移除</el-button>
+          </div>
         </div>
         <div class="add-section">
           <el-input
             v-model="newRootPath"
-            placeholder="输入目录绝对路径，如 D:\Share"
+            placeholder="输入绝对路径，如 D:\Share"
             clearable
+            class="path-input"
             @keyup.enter="handleAddRoot"
+            style="flex: 5"
+          />
+          <el-input
+            v-model="newRootName"
+            placeholder="名称（默认文件夹名）"
+            clearable
+            class="name-input"
+            maxlength="50"
+            @keyup.enter="handleAddRoot"
+            style="flex: 4"
           />
           <el-button type="primary" @click="handleAddRoot" :loading="adding">
             添加
@@ -53,6 +65,31 @@
         </div>
       </div>
     </div>
+
+    <!-- 重命名共享目录弹窗（布局与「最大上传」子弹窗一致） -->
+    <el-dialog v-model="showRenameDialog" width="360px" destroy-on-close append-to-body :show-close="false" class="sub-dialog-wrap">
+      <template #title><span class="sub-dialog-title">重命名共享目录</span></template>
+      <div class="sub-dialog-body">
+        <div class="rename-row">
+          <span class="rename-label">绝对路径</span>
+          <span class="rename-value">{{ renameTarget?.path || '' }}</span>
+        </div>
+        <div class="rename-row">
+          <span class="rename-label">原名</span>
+          <span class="rename-value">{{ renameTarget?.name || '' }}</span>
+        </div>
+        <div class="rename-row">
+          <span class="rename-label">新名称</span>
+          <el-input v-model="renameValue" placeholder="输入新名称" maxlength="50" @keyup.enter="handleRename" />
+        </div>
+      </div>
+      <template #footer>
+        <div class="sub-dialog-footer">
+          <el-button @click="showRenameDialog = false">取消</el-button>
+          <el-button type="primary" @click="handleRename">保存</el-button>
+        </div>
+      </template>
+    </el-dialog>
 
     <!-- 上传设置子弹窗 -->
     <el-dialog v-model="showSubDialog" width="360px" destroy-on-close append-to-body :show-close="false" class="sub-dialog-wrap">
@@ -74,10 +111,11 @@
 </template>
 
 <script setup>
-import { ref, computed, inject } from 'vue'
-import { fetchRoots, addRoot, removeRoot, fetchConfig, updateConfig, openLogDir as openLogDirRequest } from '../api'
+import { ref, computed, watch, inject } from 'vue'
+import { fetchRoots, addRoot, removeRoot, renameRoot, fetchConfig, updateConfig, openLogDir as openLogDirRequest } from '../api'
 import api from '../api'
 import { isEnabled, enable, disable } from '@tauri-apps/plugin-autostart'
+import { isShell } from '../utils/env'
 
 const showSettings = ref(false)
 const configMaxSize = ref(500)
@@ -98,29 +136,32 @@ const showSubDialog = ref(false)
 const subDialogValue = ref('')
 const roots = inject('roots', ref([]))
 const newRootPath = ref('')
+const newRootName = ref('')
 const adding = ref(false)
 
+// 输入路径后自动填名称（取路径最后一段），用户可改
+watch(newRootPath, (val) => {
+  const parts = val.replace(/\\/g, '/').replace(/\/+$/, '').split('/').filter(Boolean)
+  newRootName.value = parts[parts.length - 1] || ''
+})
 
-function isTauri() { return typeof window !== 'undefined' && window.__TAURI_INTERNALS__ }
-
-// 本机（后端按请求来源 IP 判断）→ 允许打开日志目录
-const isLocal = inject('isLocal', ref(false))
 
 async function openLogDir() {
-  if (!isLocal.value) {
-    ElMessage.info('请在本机（电脑）上打开日志目录')
+  if (!isShell.value) {
+    ElMessage.info('请在桌面应用中打开日志目录')
     return
   }
   try {
     const res = await openLogDirRequest()
     if (!res.data.success) ElMessage.error(res.data.message || '打开失败')
+    else ElMessage.success('已打开日志目录')
   } catch {
     ElMessage.error('打开失败')
   }
 }
 
 async function loadAutoStart() {
-  if (!isTauri()) return
+  if (!isShell.value) return
   try { autoStart.value = await isEnabled() }
   catch (e) { api.post('/logs', { level: 'error', message: '[自动启动] 检查状态失败: ' + (e.message || e) }) }
 }
@@ -151,18 +192,7 @@ defineExpose({ open })
 async function loadRoots() {
   try {
     const res = await fetchRoots()
-    console.log('fetchRoots response:', res.data)
-    const r = res.data
-    // 新格式：{ success, message, data: { roots } }
-    // 旧格式：{ roots: [...] }
-    if (r.data && Array.isArray(r.data.roots)) {
-      roots.value = r.data.roots
-    } else if (Array.isArray(r.roots)) {
-      roots.value = r.roots
-    } else {
-      console.warn('unexpected roots format:', r)
-      roots.value = []
-    }
+    roots.value = res.data.data?.roots || []
   } catch (e) {
     console.error('loadRoots error:', e)
     roots.value = []
@@ -227,12 +257,15 @@ async function handleSubSave() {
 async function handleAddRoot() {
   const p = newRootPath.value.trim()
   if (!p) return
+  const name = newRootName.value.trim() || p.split(/[\\/]/).pop() || ''
   adding.value = true
   try {
-    const res = await addRoot(p)
+    const res = await addRoot(p, newRootName.value.trim())
     if (!res.data.success) throw { response: { data: res.data } }
     roots.value = res.data.data?.roots || []
     newRootPath.value = ''
+    newRootName.value = ''
+    ElMessage.success(`已添加共享目录「${name}」`)
   } catch (err) {
     const msg = err.response?.data?.message || err.message || '添加失败'
     ElMessage.error(msg)
@@ -248,13 +281,44 @@ async function handleRemoveRoot(targetPath) {
       cancelButtonText: '取消',
       type: 'warning'
     })
-  } catch { return }
+  } catch {
+    // 用户取消移除 → 记「移除已取消」（type=7 op=5，前端写入）
+    api.post('/logs', { level: 'info', type: 7, data: { op: 5, dir: targetPath, action: 'remove' } }).catch(() => {})
+    return
+  }
   try {
     const res = await removeRoot(targetPath)
     if (!res.data.success) throw { response: { data: res.data } }
     roots.value = res.data.data?.roots || []
+    ElMessage.success(`已移除共享目录「${targetPath.split(/[\\/]/).pop() || targetPath}」`)
   } catch (err) {
     ElMessage.error(err.response?.data?.message || '移除失败')
+  }
+}
+
+// 重命名共享目录
+const showRenameDialog = ref(false)
+const renameTarget = ref(null)
+const renameValue = ref('')
+
+function openRenameDialog(root) {
+  renameTarget.value = root
+  renameValue.value = root.name
+  showRenameDialog.value = true
+}
+
+async function handleRename() {
+  const name = renameValue.value.trim()
+  if (!name) { ElMessage.warning('名称不能为空'); return }
+  const oldName = renameTarget.value.name
+  try {
+    const res = await renameRoot(renameTarget.value.path, name)
+    if (!res.data.success) throw new Error(res.data.message)
+    roots.value = res.data.data?.roots || []
+    ElMessage.success(`已重命名共享目录「${oldName}」→「${name}」`)
+    showRenameDialog.value = false
+  } catch (e) {
+    ElMessage.error(e.message || '重命名失败')
   }
 }
 </script>
@@ -308,6 +372,35 @@ async function handleRemoveRoot(targetPath) {
 .sub-dialog-title { font-size: 18px; font-weight: 600; }
 .empty-hint { color: #909399; font-size: 14px; text-align: center; padding: 12px 0; }
 
+.root-actions {
+  display: flex;
+  gap: 6px;
+  flex-shrink: 0;
+}
+.rename-row {
+  display: flex;
+  align-items: center;
+  margin-top: 10px;
+  gap: 8px;
+}
+.rename-row:first-child { margin-top: 0; }
+.rename-label {
+  font-size: 14px;
+  font-weight: 600;
+  color: #303133;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+.rename-value {
+  font-size: 14px;
+  font-weight: 500;
+  color: #909399;
+  margin-left: auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.rename-row :deep(.el-input) { margin-left: auto; width: 100px; }
 .root-item {
   display: flex;
   align-items: center;
@@ -317,13 +410,22 @@ async function handleRemoveRoot(targetPath) {
   border-radius: 6px;
 }
 .root-info { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.root-info svg { flex-shrink: 0; }
 .root-name { font-weight: 600; white-space: nowrap; }
-.root-path { color: #909399; font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.root-path { color: #909399; font-size: 14px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .add-section { display: flex; align-items: center; gap: 8px; }
 .add-section .el-input { flex: 1; }
+/* 路径/名称输入框 placeholder 较长：收紧左右内边距，让文字显示更多 */
+.add-section :deep(.path-input .el-input__inner),
+.add-section :deep(.name-input .el-input__inner) {
+  padding-left: 0px !important;
+  padding-right: 0px !important;
+  font-size: 13px;
+}
 .error-msg { color: #f56c6c; font-size: 13px; }
 </style>
 <style>
 .settings-dialog-wrap .el-dialog__body { padding-top: 0; padding-bottom: 0; }
+.sub-dialog-wrap { padding: 30px; }
 .sub-dialog-wrap .el-dialog__body { padding: 0; }
 </style>

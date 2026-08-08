@@ -62,16 +62,19 @@ export function parseLog(entry) {
             files: d.files.map(f => ({ prefix: tag, text: `${f.name || f}` }))
           }
         }
-        return { summary: { op: tag, text: `已取消` }, files: d.file ? [{ prefix: tag, text: `${displayFile(d.file, d.is_dir)}` }] : d.count ? [{ prefix: tag, text: `(${d.count}项)` }] : [] }
+        return { summary: { op: tag, text: d.file ? `已取消(1项)` : `已取消` }, files: d.file ? [{ prefix: tag, text: `${displayFile(d.file, d.is_dir)}` }] : d.count ? [{ prefix: tag, text: `(${d.count}项)` }] : [] }
       }
       if (d.op === 2) {
-        return { summary: { op: tag, text: `上传失败` }, files: [{ prefix: tag, text: `${displayFile(d.file, d.is_dir)}` }, { prefix: tag, text: `${d.error}` }] }
+        const failText = entry.type === 2 ? '替换失败' : '上传失败'
+        return { summary: { op: tag, text: failText }, files: [{ prefix: tag, text: `${displayFile(d.file, d.is_dir)}` }, { prefix: tag, text: `${d.error}` }] }
       }
       const fileItems = d.files || []
       const dir = relativeDir(d.dir, d.root)
       const prefixText = entry.type === 2 ? '已替换' : '成功'
       const countText = d.count > 1 ? `(${d.count}项)` : ''
-      const dirDisplay = dir ? dir + '/' : ''
+      // 目标目录显示「根名/子路径」：上传到子目录 → testdira/testa/，上传到根 → testdira/
+      const rootName = d.root ? String(d.root).replace(/[/\\]+$/, '').split(/[\\/]/).pop() : ''
+      const dirDisplay = (rootName ? rootName + '/' : '') + (dir ? dir + '/' : '')
       return {
         summary: { op: tag, text: `${prefixText}${countText} → ${dirDisplay}` },
         files: fileItems.map(f => ({ prefix: tag, text: `${f.name}`, size: f.size ? `(${f.size})` : '' }))
@@ -83,7 +86,7 @@ export function parseLog(entry) {
     }
     case 4:
       if (d.op === 0) {
-        const countText = d.count ? `(${d.count}项)` : '';
+        const countText = d.count ? `(${d.count}项)` : (d.file ? `(1项)` : '');
         return { summary: { op: tag, text: `已取消${countText}` }, files: d.file ? [{ prefix: tag, text: `${d.file}` }] : [] }
       }
       if (d.op === 3) {
@@ -120,6 +123,15 @@ export function parseLog(entry) {
       if (d.op === 2) return { summary: { op: tag, text: `移除成功` }, files: [{ prefix: tag, text: `${d.dir}` }] }
       if (d.op === 3) return { summary: { op: tag, text: `添加失败` }, files: [{ prefix: tag, text: `${d.dir}` }, ...(d.error ? [{ prefix: tag, text: `${d.error}` }] : [])] }
       if (d.op === 4) return { summary: { op: tag, text: `移除失败` }, files: [{ prefix: tag, text: `${d.dir}` }, ...(d.error ? [{ prefix: tag, text: `${d.error}` }] : [])] }
+      if (d.op === 5) {
+        const isRemove = d.action === 'remove'
+        const countText = d.count ? `(${d.count}项)` : ((d.dirs || d.dir) ? `(1项)` : '')
+        const label = isRemove ? `移除已取消${countText}` : `添加已取消${countText}`
+        const items = d.dirs ? d.dirs.map(x => ({ prefix: tag, text: `${x}` })) : (d.dir ? [{ prefix: tag, text: `${d.dir}` }] : [])
+        return { summary: { op: tag, text: label }, files: items }
+      }
+      if (d.op === 6) return { summary: { op: tag, text: `重命名成功` }, files: [{ prefix: tag, text: `${d.dir || ''}` }, { prefix: tag, text: `${d.oldName || ''} → ${d.newName || ''}` }] }
+      if (d.op === 7) return { summary: { op: tag, text: `重命名失败` }, files: [{ prefix: tag, text: `${d.dir || ''}` }, ...(d.error ? [{ prefix: tag, text: `${d.error}` }] : [])] }
       return { summary: { op: tag, text: d.dir || '' } }
     case 8:
       if (d.op === 2) {
@@ -151,6 +163,7 @@ export function parseLog(entry) {
         }
       }
       if (d.desc && d.url) return { summary: { op: tag, text: `${d.desc} : ${d.url}` } }
+      if (d.desc && d.buildTs) return { summary: { op: tag, text: `${d.desc} : ${d.buildTs}` } }
       return { summary: { op: tag, text: d.desc } }
     case 10:
       if (d.op === 3) {
@@ -164,6 +177,7 @@ export function parseLog(entry) {
       if (d.error) { const dir = relativeDir(d.dir, d.root); return { summary: { op: tag, text: `${dir} — ${d.error}` } } }
       return { summary: { op: tag, text: relativeDir(d.dir, d.root) || d.dir } }
     case 11:
+      if (d.op === 0) return { summary: { op: tag, text: '已取消' } }
       if (d.op === 1) return { summary: { op: tag, text: '已清空' } }
       if (d.op === 2) return { summary: { op: tag, text: '缓冲区已清空' } }
       return { summary: { op: tag, text: entry.message || '' } }

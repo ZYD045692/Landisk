@@ -51,7 +51,21 @@
       "PowerShell(taskkill /F /IM chrome.exe 2>$null; Start-Sleep -Seconds 1; Remove-Item -Path \"$env:TEMP\\\\chrome-cdp-test\" -Recurse -Force -ErrorAction SilentlyContinue; Write-Host \"cleaned\")",
       "Bash(python -c ' *)",
       "Bash(curl -sv \"http://localhost:22580/api/files?root=0&path=/\")",
-      "Read(//d/Desktop/transfer/**)"
+      "Read(//d/Desktop/transfer/**)",
+      "PowerShell($c = Get-NetTCPConnection -LocalPort 22580 -State Listen -ErrorAction SilentlyContinue; if \\($c\\) { \"STILL RUNNING \\(PID $\\($c.OwningProcess\\)\\)\" } else { \"PORT FREE - crawl server auto-stopped\" }; Get-Process -Name landisk-server -ErrorAction SilentlyContinue | Measure-Object | ForEach-Object { \"landisk-server procs: $\\($_.Count\\)\" })",
+      "Bash(cd d:/Desktop/transfer/client && npm run build 2>&1 | tail -4 && cd .. && node --check test/test-crawl.js && echo \"SYNTAX OK\")",
+      "Read(//d/Desktop/**)",
+      "Bash(node --check test/setup.js)",
+      "Bash(grep -rn \"enum DragDropEvent\" \"C:\\\\Users\\\\Surperman\\\\.cargo\\\\registry\\\\src\\\\index.crates.io-1949cf8c6b5b557f\\\\tauri-2.11.5\\\\src\\\\\" 2>/dev/null; echo \"=== webview builder on_drag_drop_event ===\"; grep -rn \"pub fn on_drag_drop_event\\\\|pub fn disable_drag_drop_handler\\\\|pub fn enable_drag_drop_handler\" \"C:\\\\Users\\\\Surperman\\\\.cargo\\\\registry\\\\src\\\\index.crates.io-1949cf8c6b5b557f\\\\tauri-2.11.5\\\\src\\\\\" 2>/dev/null)",
+      "Read(//tmp/**)",
+      "Bash(grep -E '✗' /tmp/api-c.log | head)",
+      "Bash(node test/setup.js >/dev/null 2>&1 && node test/test-api.js > /tmp/api-d.log 2>&1; echo \"exit=$?\"; tail -3 /tmp/api-d.log; echo \"=== config 恢复检查 ===\"; cat dev-data/config.json | head -8)",
+      "Bash(npm --prefix client run build)",
+      "Bash(echo \"build_exit=$?\")",
+      "Bash(node -r ./test/cdp-wrapper.js test/test-crawl.js)",
+      "Bash(echo \"crawl_exit=$?\")",
+      "Bash(echo \"build=$?\")",
+      "Bash(echo \"crawl=$?\")"
     ]
   }
 }

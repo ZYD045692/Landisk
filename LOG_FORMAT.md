@@ -62,6 +62,12 @@ YYYY-MM-DD HH:mm:ss LEVEL [TAG] 操作描述
 {"op":2,"file":"bigfile.iso","error":"文件过大，最大允许 500 MB","root":"D:\\test"}
 ```
 
+新增失败（前端写入，拖入文件夹/读取失败直接拒绝时）：
+```json
+{"op":2,"file":"myfolder","error":"不支持上传文件夹"}
+{"op":2,"file":"a.txt","error":"读取文件失败"}
+```
+
 取消（前端写入）：
 ```json
 {"op":0,"count":3,"files":["f1.txt","f2.txt","f3.txt"],"dir":"/subdir","root":"D:\\test"}
@@ -128,12 +134,23 @@ f1.txt
 {"op":1,"dir":"D:\\test\\sub","count":2,"files":[{"name":"b.doc","size":"512 KB"}],"root":"D:\\test"}
 ```
 
+替换失败（写入磁盘失败，与上传失败的 type=1 op=2 区分）：
+```json
+{"op":2,"file":"b.doc","error":"其他原因","root":"D:\\test"}
+```
+
 **渲染效果**
 
 ```
 2026-07-29 18:33:58 INFO [替换] 已替换(2项) → subdir
 report.pdf (1.5 MB)
 old.doc (500 KB)
+```
+
+```
+2026-07-29 18:33:58 ERROR [替换] 替换失败
+b.doc
+其他原因
 ```
 
 ---
@@ -304,16 +321,35 @@ myfolder/
 
 | op | 含义 |
 |---|---|
-| 1 | 成功 |
+| 1 | 成功（文件→默认程序；目录→资源管理器，均仅桌面端可调） |
 | 2 | 失败 |
 
 **JSON 格式**
 
+打开文件成功：
 ```json
 {"op":1,"file":"report.pdf","root":"D:\\test"}
+```
+
+打开文件夹（资源管理器）成功：
+```json
+{"op":1,"file":"myfolder","dir":"D:\\test\\myfolder","root":"D:\\test"}
+```
+
+打开日志目录（资源管理器）成功：
+```json
+{"op":1,"file":"logs","dir":"C:\\Users\\Me\\AppData\\Roaming\\logs"}
+```
+
+失败：
+```json
 {"op":2,"file":"report.pdf","error":"系统找不到指定的文件","root":"D:\\test"}
-{"op":2,"file":"myfolder/","error":"不能打开目录","root":"D:\\test"}
+{"op":2,"file":"myfolder","error":"仅桌面端可打开文件夹","root":"D:\\test"}
+{"op":2,"file":"report.pdf","error":"仅桌面端可打开文件","root":"D:\\test"}
 {"op":2,"file":"...","error":"无权访问该路径","root":"D:\\test"}
+{"op":2,"file":"","error":"仅桌面端可打开日志目录"}
+{"op":2,"file":"","error":"日志目录不存在"}
+{"op":2,"file":"","error":"打开日志目录失败"}
 {"op":2,"file":"report.pdf","error":"其他原因","root":"D:\\test"}
 ```
 
@@ -324,26 +360,45 @@ myfolder/
 ```
 
 ```
+2026-07-29 18:33:58 INFO [打开] myfolder（资源管理器）
+```
+
+```
 2026-07-29 18:33:58 WARN [打开] 打开失败
 report.pdf
 系统找不到指定的文件
+```
+
+```
+2026-07-29 18:33:58 WARN [打开] 打开失败
+myfolder
+仅桌面端可打开文件夹
+```
+
+```
+2026-07-29 18:33:58 WARN [打开] 打开失败
+report.pdf
+仅桌面端可打开文件
 ```
 
 ---
 
 ### 根目录 (type=7)
 
-由后端写入。
+由后端写入（op=5「已取消」由前端写入）。
 
 **op 码表**
 
-| op | 含义 |
-|---|---|
-| 0 | 启动加载 |
-| 1 | 添加成功 |
-| 2 | 移除成功 |
-| 3 | 添加失败 |
-| 4 | 移除失败 |
+| op | 含义 | 写入方 |
+|---|---|---|
+| 0 | 启动加载 | 后端 |
+| 1 | 添加成功 | 后端 |
+| 2 | 移除成功 | 后端 |
+| 3 | 添加失败 | 后端 |
+| 4 | 移除失败 | 后端 |
+| 5 | 已取消（改名弹窗取消添加 / 移除确认取消） | 前端 |
+| 6 | 重命名成功 | 后端 |
+| 7 | 重命名失败 | 后端 |
 
 **JSON 格式**
 
@@ -352,6 +407,7 @@ report.pdf
 {"op":0,"dir":"D:\\Share"}
 {"op":1,"dir":"D:\\Share"}
 {"op":2,"dir":"D:\\OldShare"}
+{"op":6,"dir":"D:\\Share","oldName":"Share","newName":"Docs"}
 ```
 
 失败：
@@ -363,9 +419,35 @@ report.pdf
 {"op":3,"dir":"D:\\Share","error":"保存配置失败: 权限不足"}
 {"op":4,"dir":"D:\\NotShared","error":"该目录不在共享列表中"}
 {"op":4,"dir":"D:\\Share","error":"保存配置失败: 权限不足"}
+{"op":7,"dir":"D:\\Share","error":"根目录名称 \"Docs\" 已存在，请换一个名称"}
+{"op":7,"dir":"D:\\NotShared","error":"该目录不在共享列表中"}
+```
+
+已取消（前端写入）：
+```json
+{"op":5,"dir":"D:\\Share","action":"add"}
+{"op":5,"dir":"D:\\OldShare","action":"remove"}
+{"op":5,"count":3,"dirs":["D:\\A","D:\\B","D:\\C"],"action":"remove"}
 ```
 
 **渲染效果**
+
+```
+2026-07-29 18:33:58 INFO [根目录] 添加已取消
+D:\Share
+```
+
+```
+2026-07-29 18:33:58 INFO [根目录] 移除已取消
+D:\OldShare
+```
+
+```
+2026-07-29 18:33:58 INFO [根目录] 移除已取消(3项)
+D:\A
+D:\B
+D:\C
+```
 
 添加成功：
 ```
@@ -470,6 +552,7 @@ D:\NotShared
 
 ```json
 {"op":1,"desc":"服务地址","url":"http://192.168.1.12:22580"}
+{"op":1,"desc":"编译时间","buildTs":"2026-08-03 22:59:45"}
 {"op":1,"desc":"共享目录","count":2,"dirs":["D:\\Share1","D:\\Share2"]}
 ```
 
@@ -480,10 +563,16 @@ D:\NotShared
 ```
 
 ```
+2026-07-29 18:33:58 INFO [启动] 编译时间 : 2026-08-03 22:59:45
+```
+
+```
 2026-07-29 18:33:58 INFO [启动] 共享目录 2 个
 D:\Share1
 D:\Share2
 ```
+
+> `buildTs` 是 build.rs 注入的编译时间戳，`/api/server-info` 也返回同名字段，用于判断运行中的后端是否最新编译（dev watch 的 mtime 检测在 Windows 上可能漏检）。
 
 ---
 
@@ -504,6 +593,9 @@ D:\Share2
 {"op":2,"dir":"我的文档","root":"D:\\Share"}
 {"op":3,"dir":"/subdir","error":"系统找不到指定的文件夹","root":"D:\\Share"}
 {"op":3,"dir":"/restricted","error":"没有权限访问","root":"D:\\Share"}
+{"op":3,"dir":"/nonexistentroot/...","error":"无效的根目录"}
+{"op":3,"dir":"/root/C:/Windows/...","error":"无权访问该路径"}
+{"op":3,"dir":"/root/sub","error":"其他原因","root":"D:\\Share"}
 ```
 
 **渲染效果**
@@ -522,23 +614,29 @@ subdir
 
 ### 日志 (type=11)
 
-由后端写入。
+由后端写入（op=0「已取消」由前端写入）。
 
 **op 码表**
 
-| op | 含义 |
-|---|---|
-| 1 | 清空全部（含文件） |
-| 2 | 清空显示缓冲区 |
+| op | 含义 | 写入方 |
+|---|---|---|
+| 0 | 已取消（清空日志确认取消） | 前端 |
+| 1 | 清空全部（含文件） | 后端 |
+| 2 | 清空显示缓冲区 | 后端 |
 
 **JSON 格式**
 
 ```json
+{"op":0}
 {"op":1}
 {"op":2}
 ```
 
 **渲染效果**
+
+```
+2026-07-29 18:33:58 INFO [日志] 已取消
+```
 
 ```
 2026-07-29 18:33:58 INFO [日志] 已清空
@@ -581,11 +679,11 @@ subdir
 ## 说明
 
 1. **所有操作日志均由后端 Rust handler 写入**，前端不再通过 `POST /api/logs` 写操作日志
-2. **唯一例外**：`type=1 op=0`（上传取消）、`type=4 op=0`（删除取消）、`type=10 op=2`（根目录切换）由前端写入，属于界面行为而非文件操作
+2. **例外（前端写入，界面行为）**：`type=1 op=0`（上传取消）、`type=1 op=2`（不支持上传文件夹/读取文件失败，前端直接拒绝时）、`type=4 op=0`（删除取消）、`type=10 op=2`（根目录切换）、`type=7 op=5`（添加/移除已取消）、`type=11 op=0`（清空日志已取消）
 3. **日志查看器渲染**：所有文本左对齐
 4. **错误消息**：`error` 字段为用户可读的中文消息，由后端根据具体错误原因生成；未知错误统一归为 `"其他原因"`
 5. **批量操作日志**（`type=4`）：成功写一条聚合日志，失败每条各写一条独立日志
 6. **写入方**：
    - `type 1/2/4/5/6/7/8/9/11/12` — 后端
-   - `type 10 op=2` — 前端
+   - `type 7 op=5`、`type 11 op=0`、`type 10 op=2`、`type=1 op=0`、`type=1 op=2`（拒绝类）、`type=4 op=0` — 前端
    - `type 10 op=3` — 后端

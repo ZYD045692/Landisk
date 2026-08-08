@@ -5,7 +5,7 @@
   "scripts": {
     "start": "npx tauri dev",
     "server": "cargo run --manifest-path src-tauri/server/Cargo.toml -- --static-dir=client/dist",
-    "dev": "cargo watch --poll --watch src-tauri/server/src -x \"run --manifest-path src-tauri/server/Cargo.toml -- --static-dir=client/dist\"",
+    "dev": "cargo watch --poll --watch src --workdir src-tauri/server -x \"run -- --static-dir=../../client/dist\"",
     "build": "cd client && npm run build",
     "build:server": "npm --prefix client run build && node scripts/build-sidecar.js",
     "build:sidecar": "node scripts/build-sidecar.js",

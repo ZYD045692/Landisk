@@ -29,8 +29,13 @@
       </div>
       <div v-if="selected.length > 0" class="batch-bar">
         <span class="batch-count">已选 {{ selected.length }} 项</span>
-        <el-button v-if="!isShell" size="small" type="primary" @click="batchDownload">批量下载</el-button>
-        <el-button size="small" type="danger" @click="batchDelete" :loading="batchDeleting">批量删除</el-button>
+        <template v-if="isVirtualRoot">
+          <el-button size="small" type="danger" @click="batchRemoveRoots" :loading="batchDeleting">批量移除</el-button>
+        </template>
+        <template v-else>
+          <el-button v-if="!isShell" size="small" type="primary" @click="batchDownload">批量下载</el-button>
+          <el-button size="small" type="danger" @click="batchDelete" :loading="batchDeleting">批量删除</el-button>
+        </template>
         <el-button size="small" @click="selected = []">取消选择</el-button>
       </div>
     </div>
@@ -91,10 +96,9 @@
             </template>
           </el-table-column>
 
-          <el-table-column label="大小" width="90" align="right" class-name="col-size">
+          <el-table-column label="大小" width="95" align="right" header-align="center" class-name="col-size">
             <template #default="{ row }">
-              <span v-if="row.isDirectory" class="text-muted">--</span>
-              <span v-else>{{ formatFileSize(row.size) }}</span>
+              <span v-if="!row.isDirectory">{{ formatFileSize(row.size) }}</span>
             </template>
           </el-table-column>
 
@@ -107,18 +111,25 @@
           <el-table-column label="操作" width="140" align="center" fixed="right">
             <template #default="{ row }">
               <template v-if="row.isDirectory">
-                <el-button link type="primary" size="small" @click.stop="openDir(row.name)">
+                <!-- 壳里打开文件夹→资源管理器；浏览器→进入目录 -->
+                <el-button link type="primary" size="small" @click.stop="isShell ? openFileRow(dirOpenPath(row)) : openDir(row.name)">
                   打开
+                </el-button>
+                <el-button v-if="isVirtualRoot" link type="danger" size="small" @click.stop="confirmRemoveRoot(row)">
+                  移除
+                </el-button>
+                <el-button v-else link type="danger" size="small" @click.stop="confirmDelete(row)">
+                  删除
                 </el-button>
               </template>
               <template v-else>
                 <el-button link :type="isShell ? 'primary' : 'success'" size="small" @click.stop="handleFileAction(row)">
                   {{ isShell ? '打开' : '下载' }}
                 </el-button>
+                <el-button link type="danger" size="small" @click.stop="confirmDelete(row)">
+                  删除
+                </el-button>
               </template>
-              <el-button link type="danger" size="small" @click.stop="confirmDelete(row)">
-                删除
-              </el-button>
             </template>
           </el-table-column>
         </el-table>
@@ -179,6 +190,15 @@
               @click.stop="handleFileAction(row)"
             />
             <el-button
+              v-if="isVirtualRoot"
+              link
+              type="warning"
+              size="small"
+              class="mobile-remove-btn"
+              @click.stop="confirmRemoveRoot(row)"
+            >移除</el-button>
+            <el-button
+              v-else
               :icon="Delete"
               circle
               size="small"
@@ -193,18 +213,17 @@
 </template>
 
 <script setup>
-import { ref, computed, watch } from 'vue'
+import { ref, computed, watch, inject } from 'vue'
 import { ElMessageBox, ElMessage } from 'element-plus'
 import { Delete, Download, ArrowRight, Search, Refresh } from '@element-plus/icons-vue'
 import { getFileIcon, formatFileSize, formatDate } from '../utils/format'
-import { deleteFile, apiUrl, downloadFileBlob } from '../api'
+import { deleteFile, removeRoot, apiUrl, downloadFileBlob } from '../api'
+import { isShell } from '../utils/env'
 
 async function openFileRow(fpath) {
+  const name = String(fpath).replace(/\/+$/, '').split('/').pop() || fpath
   try {
     const body = { path: fpath }
-    if (props.rootIndex !== undefined && props.rootIndex !== null) {
-      body.root = props.rootIndex
-    }
     const res = await fetch(apiUrl('/files/open'), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -214,8 +233,16 @@ async function openFileRow(fpath) {
     if (!data.success) {
       ElMessage.error(data.message)
       emit('retry')
+    } else {
+      ElMessage.success(`已打开「${name}」`)
     }
   } catch {
+    ElMessage.error('打开失败')
+    fetch(apiUrl('/logs'), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ level: 'error', type: 6, data: { op: 2, file: name, error: '打开失败' } })
+    }).catch(() => {})
     emit('retry')
   }
 }
@@ -225,12 +252,16 @@ const props = defineProps({
   loading: { type: Boolean, default: false },
   error: { type: String, default: '' },
   currentPath: { type: String, default: '/' },
-  rootIndex: { type: Number, default: undefined },
-  rootPath: { type: String, default: '' },
   pinTop: { type: Array, default: () => [] }
 })
 
 const emit = defineEmits(['open-dir', 'retry', 'deleted'])
+
+// 共享目录列表（App.vue provide，同一个 ref）——移除后自动触发 FileBrowser 刷新
+const roots = inject('roots', ref([]))
+
+// 虚拟根目录（currentPath 为 '/' 或 ''）下的行都是共享根目录：操作列显示「移除」而非「删除」
+const isVirtualRoot = computed(() => props.currentPath === '/' || props.currentPath === '')
 
 // 搜索
 const searchQuery = ref('')
@@ -333,7 +364,7 @@ async function batchDelete() {
       const res = await fetch(apiUrl('/delete/batch'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ paths, root: props.rootIndex })
+        body: JSON.stringify({ paths })
       })
       const data = await res.json()
       if (data.success) {
@@ -350,6 +381,7 @@ async function batchDelete() {
     batchDeleting.value = false
     emit('deleted')
   } catch {
+    ElMessage.info('已取消批量删除')
     // 用户取消，记日志
     fetch(apiUrl('/logs'), {
       method: 'POST',
@@ -369,7 +401,7 @@ async function batchDownload() {
   for (const row of files) {
     const fpath = (props.currentPath === '/' ? '' : props.currentPath) + '/' + row.name
     try {
-      const { response, isJson, data } = await downloadFileBlob(fpath, props.rootIndex)
+      const { response, isJson, data } = await downloadFileBlob(fpath)
       if (isJson) {
         failures.push({ name: row.name, message: data?.message || '下载失败' })
         continue
@@ -412,7 +444,7 @@ function openDir(name) {
 async function downloadFile(row) {
   const fpath = (props.currentPath === '/' ? '' : props.currentPath) + '/' + row.name
   try {
-    const { response, isJson, data } = await downloadFileBlob(fpath, props.rootIndex)
+    const { response, isJson, data } = await downloadFileBlob(fpath)
     if (isJson) {
       ElMessage.error(data?.message || '下载失败')
       emit('retry')
@@ -431,12 +463,20 @@ async function downloadFile(row) {
     a.click()
     document.body.removeChild(a)
     URL.revokeObjectURL(url)
+    ElMessage.success(`已开始下载「${filename}」`)
   } catch {
+    ElMessage.error('下载失败')
+    fetch(apiUrl('/logs'), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ level: 'error', type: 5, data: { op: 2, file: row.name, error: '下载失败' } })
+    }).catch(() => {})
     emit('retry')
   }
 }
 
 async function confirmDelete(row) {
+  if (isVirtualRoot.value) return  // 虚拟根下的共享目录只能「移除」，禁止物理删除
   const dpath = (props.currentPath === '/' ? '' : props.currentPath) + '/' + row.name
   const type = row.isDirectory ? '文件夹' : '文件'
   try {
@@ -445,7 +485,7 @@ async function confirmDelete(row) {
       '确认删除',
       { confirmButtonText: '删除', cancelButtonText: '取消', type: 'warning', confirmButtonClass: 'el-button--danger' }
     )
-    const res = await deleteFile(dpath, props.rootIndex)
+    const res = await deleteFile(dpath)
     if (!res.data.success) throw new Error(res.data.message)
     ElMessage.success(res.data.message || (res.data.data?.dest === 'permanent' ? '已永久删除（回收站不可用）' : '已移入回收站'))
     emit('deleted')
@@ -454,6 +494,7 @@ async function confirmDelete(row) {
       // 后端返回的错误消息
       ElMessage.error(e.message)
     } else {
+      ElMessage.info('已取消删除')
       // 用户取消，记日志
       fetch(apiUrl('/logs'), {
         method: 'POST',
@@ -464,8 +505,89 @@ async function confirmDelete(row) {
   }
 }
 
-// 只在壳（Tauri WebView2）里显示「打开」— 壳无法触发浏览器下载；浏览器（任何设备）→ 下载
-const isShell = computed(() => typeof window !== 'undefined' && !!window.__TAURI_INTERNALS__)
+// 行内虚拟路径（虚拟根下前缀为空）
+function rowPath(row) {
+  return (props.currentPath === '/' ? '' : props.currentPath) + '/' + row.name
+}
+
+// 壳里打开文件夹：POST /api/files/open → 后端用资源管理器打开（浏览器里则进入目录）
+function dirOpenPath(row) {
+  return rowPath(row)
+}
+
+// 移除共享目录（只从 config.roots 移除，不删磁盘文件）
+async function confirmRemoveRoot(row) {
+  try {
+    await ElMessageBox.confirm(
+      `确定移除共享目录「${row.name}」？\n仅取消共享，不会删除磁盘上的文件。`,
+      '确认',
+      { confirmButtonText: '移除', cancelButtonText: '取消', type: 'warning' }
+    )
+  } catch {
+    ElMessage.info('已取消移除')
+    // 用户取消移除 → 记「移除已取消」（type=7 op=5，前端写入）
+    fetch(apiUrl('/logs'), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ level: 'info', type: 7, data: { op: 5, dir: row.fullPath, action: 'remove' } })
+    }).catch(() => {})
+    return
+  }
+  try {
+    const res = await removeRoot(row.fullPath)
+    if (!res.data.success) throw { response: { data: res.data } }
+    roots.value = res.data.data?.roots || roots.value
+    ElMessage.success(`已移除「${row.name}」`)
+  } catch (err) {
+    ElMessage.error(err.response?.data?.message || '移除失败')
+  }
+}
+
+// 批量移除共享目录（虚拟根下的批量操作）
+async function batchRemoveRoots() {
+  const count = selected.value.length
+  try {
+    await ElMessageBox.confirm(
+      `确定移除选中的 ${count} 个共享目录？\n仅取消共享，不会删除磁盘上的文件。`,
+      '批量移除',
+      { confirmButtonText: '移除', cancelButtonText: '取消', type: 'warning', confirmButtonClass: 'el-button--danger' }
+    )
+  } catch {
+    ElMessage.info(`已取消移除 ${count} 个共享目录`)
+    // 用户取消批量移除 → 记「移除已取消」（type=7 op=5，前端写入）
+    fetch(apiUrl('/logs'), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ level: 'info', type: 7, data: { op: 5, count, dirs: selected.value.map(r => r.fullPath), action: 'remove' } })
+    }).catch(() => {})
+    return
+  }
+
+  batchDeleting.value = true
+  deleteProgress.value = 0
+  let lastRoots = null
+  let okCount = 0
+  for (let i = 0; i < selected.value.length; i++) {
+    const row = selected.value[i]
+    try {
+      const res = await removeRoot(row.fullPath)
+      if (res.data.data?.roots) lastRoots = res.data.data.roots
+      okCount++
+    } catch { /* 单个失败继续下一个 */ }
+    deleteProgress.value = Math.round(((i + 1) / count) * 100)
+  }
+  // 一次性赋值，触发 FileBrowser watch(roots) 刷新一次
+  if (lastRoots) roots.value = lastRoots
+  batchDeleting.value = false
+  selected.value = []
+  deleteProgress.value = 0
+
+  if (okCount === count) {
+    ElMessage.success(`已移除 ${count} 个共享目录`)
+  } else {
+    ElMessage.warning(`已移除 ${okCount} 个，${count - okCount} 个失败`)
+  }
+}
 
 function handleFileAction(row) {
   const fpath = (props.currentPath === '/' ? '' : props.currentPath) + '/' + row.name
@@ -676,6 +798,11 @@ function handleRowClick(row) {
   gap: 6px;
   margin-left: 8px;
   flex-shrink: 0;
+}
+
+.mobile-remove-btn {
+  min-height: 32px;
+  padding: 0 8px;
 }
 
 @media (max-width: 768px) {

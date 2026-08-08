@@ -8,10 +8,10 @@ use axum::{
     extract::{ConnectInfo, DefaultBodyLimit, Query, Request, State},
     http::{StatusCode, header},
     response::{IntoResponse, Json, Sse, sse::Event},
-    routing::{delete, get, post},
+    routing::{delete, get, post, put},
 };
 use http_body_util::BodyDataStream;
-use config::Config;
+use config::{Config, RootEntry};
 use logger::{LogQuery, Logger};
 use middleware::path_safety::resolve_safe_path;
 use serde::{Deserialize, Serialize};
@@ -23,6 +23,10 @@ use std::time::Duration;
 use tokio_stream::wrappers::BroadcastStream;
 use tokio_stream::StreamExt;
 use tower_http::cors::CorsLayer;
+
+/// 编译时间戳（build.rs 注入）：判断运行中的后端是否最新编译
+/// 启动日志 + /api/server-info 的 buildTs 字段会返回它；cargo watch 重编后该值会刷新
+const BUILD_TS: &str = env!("BUILD_TS");
 
 /// 共享应用状态
 struct AppState {
@@ -89,8 +93,9 @@ fn get_local_ip() -> String {
     "127.0.0.1".to_string()
 }
 
-/// 判断请求是否来自本机：回环地址（localhost）或本机局域网 IP
-/// 本机不一定用 localhost 访问（可能用局域网 IP），所以不能用前端 hostname 判断
+/// 主机信任门：请求是否来自运行桌面端的那台电脑（回环地址或本机局域网 IP）。
+/// 客户端分类只有壳/浏览器（前端 isShell 判定）；这里是后端对「主机级操作」的安全门——
+/// 只有主机（壳所在机器）能触发打开文件/文件夹/日志目录，远程设备一律拒绝。
 fn is_local_client(addr: &std::net::SocketAddr) -> bool {
     if addr.ip().is_loopback() { return true; }
     addr.ip().to_string() == get_local_ip()
@@ -106,36 +111,22 @@ fn format_size(bytes: u64) -> String {
     }
 }
 
-/// 从请求中解析 root 索引（兼容数字和字符串）
-fn get_root_idx(value: Option<&serde_json::Value>, roots_len: usize) -> Result<usize, String> {
-    let v = match value {
-        Some(v) => v,
-        None => return Err("无效的根目录".to_string()),
-    };
-    let idx = match v {
-        serde_json::Value::Number(n) => n.as_u64().unwrap_or(u64::MAX) as usize,
-        serde_json::Value::String(s) => s.parse::<usize>().map_err(|_| "无效的根目录".to_string())?,
-        _ => return Err("无效的根目录".to_string()),
-    };
-    if idx < roots_len {
-        Ok(idx)
-    } else {
-        Err("无效的根目录".to_string())
+/// 解析虚拟路径：第一段是根目录名，返回 (root_idx, 相对路径)
+/// 例如 "/docs/subdir" → 根名 "docs" → (idx, "/subdir")；"/" 或空 → Err（虚拟根）
+fn resolve_virtual_path(vpath: &str, roots: &[RootEntry]) -> Result<(usize, String), String> {
+    let trimmed = vpath.trim_start_matches('/');
+    if trimmed.is_empty() {
+        return Err("虚拟根".to_string());
     }
-}
-
-/// 从查询参数解析 root 索引
-fn get_root_idx_from_query(root: Option<&str>, roots_len: usize) -> Result<usize, String> {
-    let s = match root {
-        Some(s) => s,
-        None => return Err("无效的根目录".to_string()),
+    let mut parts = trimmed.splitn(2, '/');
+    let root_name = parts.next().unwrap_or("");
+    let idx = roots.iter().position(|r| r.name == root_name)
+        .ok_or_else(|| format!("无效的根目录: {}", root_name))?;
+    let relative = match parts.next() {
+        Some(rest) if !rest.is_empty() => "/".to_string() + rest,
+        _ => "/".to_string(),
     };
-    let idx = s.parse::<usize>().map_err(|_| "无效的根目录".to_string())?;
-    if idx < roots_len {
-        Ok(idx)
-    } else {
-        Err("无效的根目录".to_string())
-    }
+    Ok((idx, relative))
 }
 
 async fn save_config(state: &AppState) -> Result<(), String> {
@@ -150,7 +141,6 @@ async fn save_config(state: &AppState) -> Result<(), String> {
 #[derive(Deserialize)]
 struct FilesQuery {
     path: Option<String>,
-    root: Option<String>,
 }
 
 #[derive(Serialize)]
@@ -171,19 +161,44 @@ async fn handle_files(
 ) -> impl IntoResponse {
     let user_path = query.path.as_deref().unwrap_or("/");
     let config = state.config.lock().await;
-    let root_idx = match get_root_idx_from_query(query.root.as_deref(), config.roots.len()) {
-        Ok(i) => i,
-        Err(e) => return (StatusCode::OK, Json(serde_json::json!({"success": false, "message": e, "data": null}))),
-    };
-    let active_root = config.roots[root_idx].clone();
+    let roots = config.roots.clone();
     let show_hidden = config.show_hidden_files;
     drop(config);
 
-    let root_clone_for_log = active_root.clone();
-    let roots = vec![active_root];
-    let resolved = match resolve_safe_path(user_path, &roots) {
+    // 虚拟根：列出所有共享根目录
+    if user_path.trim_matches('/').is_empty() {
+        let entries: Vec<FileEntry> = roots.iter().map(|r| FileEntry {
+            name: r.name.clone(),
+            size: 0,
+            modified: String::new(),
+            is_directory: true,
+            extension: None,
+            full_path: r.path.clone(),
+        }).collect();
+        return (StatusCode::OK, Json(serde_json::json!({
+            "success": true, "message": "", "data": {
+                "currentPath": "/",
+                "isDirectory": true,
+                "entries": entries,
+            }
+        })));
+    }
+
+    let (root_idx, relative_path) = match resolve_virtual_path(user_path, &roots) {
+        Ok(v) => v,
+        Err(e) => {
+            state.logger.warn("打开失败", Some(10), Some(serde_json::json!({"op": 3, "dir": user_path, "error": e})));
+            return (StatusCode::OK, Json(serde_json::json!({"success": false, "message": e, "data": null})));
+        }
+    };
+    let root_path = roots[root_idx].path.clone();
+    let root_clone_for_log = root_path.clone();
+    let resolved = match resolve_safe_path(&relative_path, &[root_path]) {
         Ok(p) => p,
-        Err(_) => return (StatusCode::OK, Json(serde_json::json!({"success": false, "message": "无权访问该路径", "data": null}))),
+        Err(_) => {
+            state.logger.warn("打开失败", Some(10), Some(serde_json::json!({"op": 3, "dir": user_path, "error": "无权访问该路径"})));
+            return (StatusCode::OK, Json(serde_json::json!({"success": false, "message": "无权访问该路径", "data": null})));
+        }
     };
 
     match fs::metadata(&resolved) {
@@ -193,8 +208,14 @@ async fn handle_files(
                 let dir_iter = match fs::read_dir(&resolved) {
                     Ok(d) => d,
                     Err(e) => return match e.kind() {
-                        std::io::ErrorKind::PermissionDenied => (StatusCode::OK, Json(serde_json::json!({"success": false, "message": "没有权限访问", "data": null}))),
-                        _ => (StatusCode::OK, Json(serde_json::json!({"success": false, "message": "其他原因", "data": null}))),
+                        std::io::ErrorKind::PermissionDenied => {
+                            state.logger.warn("打开失败", Some(10), Some(serde_json::json!({"op": 3, "dir": user_path, "error": "没有权限访问", "root": root_clone_for_log.clone()})));
+                            (StatusCode::OK, Json(serde_json::json!({"success": false, "message": "没有权限访问", "data": null})))
+                        }
+                        _ => {
+                            state.logger.warn("打开失败", Some(10), Some(serde_json::json!({"op": 3, "dir": user_path, "error": "其他原因", "root": root_clone_for_log.clone()})));
+                            (StatusCode::OK, Json(serde_json::json!({"success": false, "message": "其他原因", "data": null})))
+                        }
                     },
                 };
 
@@ -268,6 +289,7 @@ async fn handle_files(
             (StatusCode::OK, Json(serde_json::json!({"success": false, "message": "系统找不到指定的文件夹", "data": null})))
         }
         Err(_) => {
+            state.logger.warn("打开失败", Some(10), Some(serde_json::json!({"op": 3, "dir": user_path, "error": "其他原因", "root": root_clone_for_log})));
             (StatusCode::OK, Json(serde_json::json!({"success": false, "message": "其他原因", "data": null})))
         }
     }
@@ -278,11 +300,11 @@ async fn handle_files(
 #[derive(Deserialize)]
 struct OpenFileBody {
     path: Option<String>,
-    root: Option<serde_json::Value>,
 }
 
 async fn handle_file_open(
     State(state): State<Arc<AppState>>,
+    ConnectInfo(addr): ConnectInfo<std::net::SocketAddr>,
     Json(body): Json<OpenFileBody>,
 ) -> impl IntoResponse {
     let user_path = match body.path {
@@ -294,17 +316,19 @@ async fn handle_file_open(
     };
 
     let config = state.config.lock().await;
-    let root_idx = match get_root_idx(body.root.as_ref(), config.roots.len()) {
-        Ok(i) => i,
-        Err(_) => {
-            state.logger.warn("无效的根目录", Some(6), Some(serde_json::json!({"op": 2, "file": &user_path, "error": "无效的根目录"})));
+    let roots = config.roots.clone();
+    drop(config);
+
+    let (root_idx, relative_path) = match resolve_virtual_path(&user_path, &roots) {
+        Ok(v) => v,
+        Err(e) => {
+            state.logger.warn("无效的根目录", Some(6), Some(serde_json::json!({"op": 2, "file": &user_path, "error": e})));
             return err_json("无效的根目录").into_response();
         }
     };
-    let root = config.roots[root_idx].clone();
-    drop(config);
+    let root = roots[root_idx].path.clone();
 
-    let resolved = match resolve_safe_path(&user_path, &[root.clone()]) {
+    let resolved = match resolve_safe_path(&relative_path, &[root.clone()]) {
         Ok(p) => p,
         Err(_) => {
             state.logger.warn("无权访问该路径", Some(6), Some(serde_json::json!({"op": 2, "file": &user_path, "error": "无权访问该路径"})));
@@ -325,9 +349,33 @@ async fn handle_file_open(
         }
     };
 
+    // 目录：用系统资源管理器打开（仅桌面端可调，避免远程设备在电脑上弹窗）
     if meta.is_dir() {
-        state.logger.warn(&format!("打开失败 · {}", user_path), Some(6), Some(serde_json::json!({"op": 2, "file": user_path, "error": "不能打开目录", "root": root.clone()})));
-        return err_json("不能打开目录").into_response();
+        if !is_local_client(&addr) {
+            state.logger.warn(&format!("打开失败 · {}", user_path), Some(6), Some(serde_json::json!({"op": 2, "file": user_path, "error": "仅桌面端可打开文件夹", "root": root.clone()})));
+            return err_json("仅桌面端可打开文件夹").into_response();
+        }
+        let dir_name = resolved.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default();
+        let dir_abs = resolved.to_string_lossy().to_string();
+        match std::process::Command::new("cmd")
+            .args(["/c", "start", "", &dir_abs])
+            .spawn()
+        {
+            Ok(_) => {
+                state.logger.info(&dir_name, Some(6), Some(serde_json::json!({"op": 1, "file": dir_name, "dir": dir_abs, "root": root.clone()})));
+                ok_json("", None).into_response()
+            }
+            Err(e) => {
+                state.logger.error(&format!("{} — {}", dir_name, e), Some(6), Some(serde_json::json!({"op": 2, "file": dir_name, "error": "其他原因", "root": root})));
+                err_json("其他原因").into_response()
+            }
+        };
+    }
+
+    // 文件：用系统默认程序打开（仅桌面端可调，避免远程设备在电脑上触发默认程序）
+    if !is_local_client(&addr) {
+        state.logger.warn(&format!("打开失败 · {}", user_path), Some(6), Some(serde_json::json!({"op": 2, "file": user_path, "error": "仅桌面端可打开文件", "root": root.clone()})));
+        return err_json("仅桌面端可打开文件").into_response();
     }
 
     let file_name = resolved.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default();
@@ -350,24 +398,16 @@ async fn handle_file_open(
 
 // ============ 根目录管理 ============
 
-#[derive(Serialize)]
-struct RootEntry {
-    name: String,
-    path: String,
-}
-
 async fn handle_roots_get(State(state): State<Arc<AppState>>) -> impl IntoResponse {
     let config = state.config.lock().await;
-    let roots: Vec<RootEntry> = config.roots.iter().map(|r| {
-        let name = Path::new(r).file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default();
-        RootEntry { name, path: r.clone() }
-    }).collect();
+    let roots = config.roots.clone();
     ok_json("", Some(serde_json::json!({"roots": roots}))).into_response()
 }
 
 #[derive(Deserialize)]
 struct RootsPostBody {
     path: Option<String>,
+    name: Option<String>,
 }
 
 async fn handle_roots_post(
@@ -402,25 +442,33 @@ async fn handle_roots_post(
     let normalized = dunce::canonicalize(abs).unwrap_or_else(|_| abs.to_path_buf());
     let normalized_str = normalized.to_string_lossy().to_string();
 
+    // 名称：未提供则取路径最后一段，必须非空且唯一
+    let name = body.name.map(|s| s.trim().to_string()).filter(|s| !s.is_empty())
+        .unwrap_or_else(|| Path::new(&normalized_str).file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default());
+
     let mut config = state.config.lock().await;
 
-    if config.roots.iter().any(|r| *r == normalized_str) {
+    if config.roots.iter().any(|r| r.path.to_lowercase() == normalized_str.to_lowercase()) {
         let err = "该目录已在共享列表中";
         state.logger.warn("添加失败", Some(7), Some(serde_json::json!({"op": 3, "dir": &normalized_str, "error": err})));
         return err_json(err).into_response();
     }
+    if config.roots.iter().any(|r| r.name == name) {
+        let err = format!("根目录名称 \"{}\" 已存在，请换一个名称", name);
+        state.logger.warn("添加失败", Some(7), Some(serde_json::json!({"op": 3, "dir": &normalized_str, "error": &err})));
+        return err_json(&err).into_response();
+    }
 
     for r in &config.roots {
-        let r_path = format!("{}\\", r.trim_end_matches('\\').trim_end_matches('/'));
-        if normalized_str.starts_with(&r_path) || normalized_str.as_str() == r.as_str() {
-            let name = Path::new(r).file_name().map(|n| n.to_string_lossy()).unwrap_or_default();
-            let err = format!("该目录已在 \"{}\" 的共享范围内", name);
+        let r_path = format!("{}\\", r.path.trim_end_matches('\\').trim_end_matches('/'));
+        if normalized_str.starts_with(&r_path) || normalized_str.as_str() == r.path.as_str() {
+            let err = format!("该目录已在 \"{}\" 的共享范围内", r.name);
             state.logger.warn("添加失败", Some(7), Some(serde_json::json!({"op": 3, "dir": &normalized_str, "error": &err})));
             return err_json(&err).into_response();
         }
     }
 
-    config.roots.push(normalized_str.clone());
+    config.roots.push(RootEntry { name: name.clone(), path: normalized_str.clone() });
     drop(config);
 
     if let Err(e) = save_config(&state).await {
@@ -429,19 +477,23 @@ async fn handle_roots_post(
         return err_json(&err).into_response();
     }
 
-    state.logger.info(&normalized_str, Some(7), Some(serde_json::json!({"op": 1, "dir": normalized_str})));
+    state.logger.info(&normalized_str, Some(7), Some(serde_json::json!({"op": 1, "dir": &normalized_str, "name": name})));
 
     let config = state.config.lock().await;
-    let roots: Vec<RootEntry> = config.roots.iter().map(|r| {
-        let name = Path::new(r).file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default();
-        RootEntry { name, path: r.clone() }
-    }).collect();
+    let roots = config.roots.clone();
     ok_json("", Some(serde_json::json!({"roots": roots}))).into_response()
 }
 
 #[derive(Deserialize)]
 struct RootsDeleteBody {
     path: Option<String>,
+}
+
+#[derive(Deserialize)]
+struct RootsRenameBody {
+    path: Option<String>,
+    #[serde(rename = "newName")]
+    new_name: Option<String>,
 }
 
 async fn handle_roots_delete(
@@ -457,22 +509,23 @@ async fn handle_roots_delete(
     };
 
     let mut config = state.config.lock().await;
-    let idx = config.roots.iter().position(|r| r.as_str() == target);
+    // 路径大小写不敏感（Windows）：添加时 dunce::canonicalize 统一了大小写，
+    // 移除时调用方传的路径大小写可能不一致（如 d:\ vs D:\），精确匹配会删不掉
+    let target_key = target.to_lowercase();
+    let idx = config.roots.iter().position(|r| r.path.to_lowercase() == target_key);
     match idx {
         Some(i) => {
-            config.roots.remove(i);
+            // 用 config 里已 canonicalize 的规范化路径记日志，避免前端传的路径大小写（d:\ vs D:\）不一致
+            let removed = config.roots.remove(i);
             drop(config);
             if let Err(e) = save_config(&state).await {
                 let err = format!("保存配置失败: {}", e);
-                state.logger.error("移除失败", Some(7), Some(serde_json::json!({"op": 4, "dir": &target, "error": &err})));
+                state.logger.error("移除失败", Some(7), Some(serde_json::json!({"op": 4, "dir": &removed.path, "error": &err})));
                 return err_json(&err).into_response();
             }
-            state.logger.info(&target, Some(7), Some(serde_json::json!({"op": 2, "dir": target.clone()})));
+            state.logger.info(&removed.path, Some(7), Some(serde_json::json!({"op": 2, "dir": removed.path.clone()})));
             let config = state.config.lock().await;
-            let roots: Vec<RootEntry> = config.roots.iter().map(|r| {
-                let name = Path::new(r).file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default();
-                RootEntry { name, path: r.clone() }
-            }).collect();
+            let roots = config.roots.clone();
             ok_json("", Some(serde_json::json!({"roots": roots}))).into_response()
         }
         None => {
@@ -480,6 +533,60 @@ async fn handle_roots_delete(
             err_json("该目录不在共享列表中").into_response()
         }
     }
+}
+
+async fn handle_roots_rename(
+    State(state): State<Arc<AppState>>,
+    Json(body): Json<RootsRenameBody>,
+) -> impl IntoResponse {
+    let target = match body.path {
+        Some(p) => p,
+        None => {
+            state.logger.warn("请提供要重命名的目录路径", Some(7), Some(serde_json::json!({"op": 7, "dir": "", "error": "请提供要重命名的目录路径"})));
+            return err_json("请提供要重命名的目录路径").into_response();
+        }
+    };
+    let new_name = match body.new_name {
+        Some(n) => n.trim().to_string(),
+        None => {
+            state.logger.warn("请提供新名称", Some(7), Some(serde_json::json!({"op": 7, "dir": &target, "error": "请提供新名称"})));
+            return err_json("请提供新名称").into_response();
+        }
+    };
+    if new_name.is_empty() {
+        state.logger.warn("重命名失败", Some(7), Some(serde_json::json!({"op": 7, "dir": &target, "error": "名称不能为空"})));
+        return err_json("名称不能为空").into_response();
+    }
+
+    let mut config = state.config.lock().await;
+    let path_key = target.to_lowercase();
+    let idx = config.roots.iter().position(|r| r.path.to_lowercase() == path_key);
+    let Some(idx) = idx else {
+        state.logger.warn("重命名失败", Some(7), Some(serde_json::json!({"op": 7, "dir": &target, "error": "该目录不在共享列表中"})));
+        return err_json("该目录不在共享列表中").into_response();
+    };
+    // 新名称唯一（排除自身）
+    let name_dup = config.roots.iter().enumerate().any(|(i, r)| i != idx && r.name == new_name);
+    if name_dup {
+        let err = format!("根目录名称 \"{}\" 已存在，请换一个名称", new_name);
+        state.logger.warn("重命名失败", Some(7), Some(serde_json::json!({"op": 7, "dir": &target, "error": &err})));
+        return err_json(&err).into_response();
+    }
+    let old_name = config.roots[idx].name.clone();
+    config.roots[idx].name = new_name.clone();
+    drop(config);
+
+    if let Err(e) = save_config(&state).await {
+        let err = format!("保存配置失败: {}", e);
+        state.logger.error("重命名失败", Some(7), Some(serde_json::json!({"op": 7, "dir": &target, "error": &err})));
+        return err_json(&err).into_response();
+    }
+
+    state.logger.info(&format!("{} → {}", old_name, new_name), Some(7), Some(serde_json::json!({"op": 6, "dir": &target, "oldName": old_name, "newName": new_name})));
+
+    let config = state.config.lock().await;
+    let roots = config.roots.clone();
+    ok_json("", Some(serde_json::json!({"roots": roots}))).into_response()
 }
 
 // ============ 配置管理 ============
@@ -497,26 +604,35 @@ async fn handle_config_get(State(state): State<Arc<AppState>>) -> impl IntoRespo
     })))
 }
 
-/// 打开日志目录（用系统资源管理器打开 logs/ 所在文件夹，仅本机可调用）
+/// 打开日志目录（用系统资源管理器打开 logs/ 所在文件夹，仅桌面端可调用）
 async fn handle_open_logdir(
     State(state): State<Arc<AppState>>,
     ConnectInfo(addr): ConnectInfo<std::net::SocketAddr>,
 ) -> impl IntoResponse {
     if !is_local_client(&addr) {
-        return err_json("仅本机可打开日志目录").into_response();
+        state.logger.warn("打开日志目录失败", Some(6), Some(serde_json::json!({"op": 2, "file": "", "error": "仅桌面端可打开日志目录"})));
+        return err_json("仅桌面端可打开日志目录").into_response();
     }
     let dir_str = state.logger.get_log_path()
         .and_then(|p| p.parent().map(|d| d.to_string_lossy().to_string()))
         .unwrap_or_default();
     if dir_str.is_empty() {
+        state.logger.warn("打开日志目录失败", Some(6), Some(serde_json::json!({"op": 2, "file": "", "error": "日志目录不存在"})));
         return err_json("日志目录不存在").into_response();
     }
     match std::process::Command::new("cmd")
         .args(["/c", "start", "", &dir_str])
         .spawn()
     {
-        Ok(_) => ok_json("", None).into_response(),
-        Err(_) => err_json("打开日志目录失败").into_response(),
+        Ok(_) => {
+            let dir_name = std::path::Path::new(&dir_str).file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_else(|| "logs".to_string());
+            state.logger.info(&format!("打开日志目录 · {}", dir_name), Some(6), Some(serde_json::json!({"op": 1, "file": dir_name, "dir": dir_str})));
+            ok_json("", None).into_response()
+        }
+        Err(_) => {
+            state.logger.error("打开日志目录失败", Some(6), Some(serde_json::json!({"op": 2, "file": "", "error": "打开日志目录失败"})));
+            err_json("打开日志目录失败").into_response()
+        }
     }
 }
 
@@ -576,7 +692,6 @@ async fn handle_config_put(
 struct UploadCheckBody {
     #[serde(rename = "targetPath")]
     target_path: Option<String>,
-    root: Option<serde_json::Value>,
     names: Option<Vec<String>>,
 }
 
@@ -587,14 +702,15 @@ async fn handle_upload_check(
     let user_path = body.target_path.as_deref().unwrap_or("/");
 
     let config = state.config.lock().await;
-    let root_idx = match get_root_idx(body.root.as_ref(), config.roots.len()) {
-        Ok(i) => i,
+    let roots = config.roots.clone();
+    drop(config);
+    let (root_idx, relative_path) = match resolve_virtual_path(user_path, &roots) {
+        Ok(v) => v,
         Err(e) => return (StatusCode::BAD_REQUEST, Json(serde_json::json!({"error": e}))),
     };
-    let root = config.roots[root_idx].clone();
-    drop(config);
+    let root = roots[root_idx].path.clone();
 
-    let resolved = match resolve_safe_path(user_path, &[root.clone()]) {
+    let resolved = match resolve_safe_path(&relative_path, &[root.clone()]) {
         Ok(p) => p,
         Err(e) => return (StatusCode::FORBIDDEN, Json(serde_json::json!({"error": e}))),
     };
@@ -622,7 +738,10 @@ async fn handle_upload(
 
     let boundary = match multer::parse_boundary(&content_type) {
         Ok(b) => b.to_string(),
-        Err(_) => return err_json("Invalid Content-Type").into_response(),
+        Err(_) => {
+            state.logger.error("上传失败", Some(1), Some(serde_json::json!({"op": 2, "file": "", "error": "Invalid Content-Type"})));
+            return err_json("Invalid Content-Type").into_response();
+        }
     };
 
     let constraints = multer::Constraints::new()
@@ -637,7 +756,6 @@ async fn handle_upload(
         constraints,
     );
     let mut target_path = String::from("/");
-    let mut root_value: Option<serde_json::Value> = None;
     let mut replace_list: Vec<String> = Vec::new();
     let mut file_fields: Vec<(String, Vec<u8>)> = Vec::new();
 
@@ -646,10 +764,6 @@ async fn handle_upload(
         match name.as_str() {
             "targetPath" => {
                 target_path = field.text().await.unwrap_or_else(|_| "/".to_string());
-            }
-            "root" => {
-                let text = field.text().await.unwrap_or_default();
-                root_value = Some(serde_json::Value::String(text));
             }
             "replace" => {
                 let text = field.text().await.unwrap_or_default();
@@ -675,18 +789,20 @@ async fn handle_upload(
         state.logger.warn("请先添加共享目录", Some(1), Some(serde_json::json!({"op": 2, "file": "", "error": "请先添加共享目录"})));
         return err_json("请先添加共享目录").into_response();
     }
-    let root_idx = match get_root_idx(root_value.as_ref(), config.roots.len()) {
-        Ok(i) => i,
+    let roots = config.roots.clone();
+    let max_size = config.max_file_size_mb * 1024 * 1024;
+    drop(config);
+
+    let (root_idx, relative_path) = match resolve_virtual_path(&target_path, &roots) {
+        Ok(v) => v,
         Err(_) => {
             state.logger.warn("无效的根目录", Some(1), Some(serde_json::json!({"op": 2, "file": "", "error": "无效的根目录"})));
             return err_json("无效的根目录").into_response();
         }
     };
-    let root = config.roots[root_idx].clone();
-    let max_size = config.max_file_size_mb * 1024 * 1024;
-    drop(config);
+    let root = roots[root_idx].path.clone();
 
-    let resolved = match resolve_safe_path(&target_path, &[root.clone()]) {
+    let resolved = match resolve_safe_path(&relative_path, &[root.clone()]) {
         Ok(p) => p,
         Err(_) => {
             state.logger.warn("无权访问该路径", Some(1), Some(serde_json::json!({"op": 2, "file": "", "error": "无权访问该路径"})));
@@ -697,6 +813,8 @@ async fn handle_upload(
     let _ = fs::create_dir_all(&resolved);
     let mut uploaded = 0u32;
     let mut replaced = 0u32;
+    let mut new_count = 0u32;
+    let mut kept_count = 0u32;
     let mut results: Vec<serde_json::Value> = Vec::new();
 
     for (original_name, data) in &file_fields {
@@ -736,10 +854,16 @@ async fn handle_upload(
             Ok(()) => {
                 let action = if replace_list.contains(original_name) && file_path.exists() { "replaced" } else if final_name != *original_name { "kept" } else { "new" };
                 if action == "replaced" { replaced += 1; } else { uploaded += 1; }
+                if action == "new" { new_count += 1; } else if action == "kept" { kept_count += 1; }
                 results.push(serde_json::json!({"name": final_name, "originalName": original_name, "size": file_size, "action": action}));
             }
             Err(_) => {
-                state.logger.error(&format!("上传失败 · {}", original_name), Some(1), Some(serde_json::json!({"op": 2, "file": original_name, "error": "其他原因", "root": root})));
+                // 替换失败记 type=2 op=2（与上传失败的 type=1 op=2 区分），前端渲染「替换失败」
+                if replace_list.contains(original_name) {
+                    state.logger.error(&format!("替换失败 · {}", original_name), Some(2), Some(serde_json::json!({"op": 2, "file": original_name, "error": "其他原因", "root": root})));
+                } else {
+                    state.logger.error(&format!("上传失败 · {}", original_name), Some(1), Some(serde_json::json!({"op": 2, "file": original_name, "error": "其他原因", "root": root})));
+                }
                 results.push(serde_json::json!({"name": final_name, "originalName": original_name, "size": file_size, "action": "write_failed"}));
             }
         }
@@ -761,8 +885,9 @@ async fn handle_upload(
     }
 
     let mut parts = Vec::new();
-    if uploaded > 0 { parts.push(format!("成功({}个文件)", uploaded)); }
-    if replaced > 0 { parts.push(format!("已替换({}个文件)", replaced)); }
+    if new_count > 0 { parts.push(format!("新增({}个文件)", new_count)); }
+    if kept_count > 0 { parts.push(format!("保留({}个文件)", kept_count)); }
+    if replaced > 0 { parts.push(format!("替换({}个文件)", replaced)); }
 
     ok_json(&parts.join("，"), Some(serde_json::json!({"files": results}))).into_response()
 }
@@ -772,7 +897,6 @@ async fn handle_upload(
 #[derive(Deserialize)]
 struct DownloadQuery {
     path: Option<String>,
-    root: Option<String>,
 }
 
 /// 错误响应：统一格式 { success: false, message, data: null }
@@ -798,17 +922,18 @@ async fn handle_download(
     };
 
     let config = state.config.lock().await;
-    let root_idx = match get_root_idx_from_query(query.root.as_deref(), config.roots.len()) {
-        Ok(i) => i,
-        Err(_) => {
-            state.logger.warn("无效的根目录", Some(5), Some(serde_json::json!({"op": 2, "file": &user_path, "error": "无效的根目录"})));
+    let roots = config.roots.clone();
+    drop(config);
+    let (root_idx, relative_path) = match resolve_virtual_path(&user_path, &roots) {
+        Ok(v) => v,
+        Err(e) => {
+            state.logger.warn("无效的根目录", Some(5), Some(serde_json::json!({"op": 2, "file": &user_path, "error": e})));
             return err_json("无效的根目录").into_response();
         }
     };
-    let root = config.roots[root_idx].clone();
-    drop(config);
+    let root = roots[root_idx].path.clone();
 
-    let resolved = match resolve_safe_path(&user_path, &[root.clone()]) {
+    let resolved = match resolve_safe_path(&relative_path, &[root.clone()]) {
         Ok(p) => p,
         Err(_) => {
             state.logger.warn("无权访问该路径", Some(5), Some(serde_json::json!({"op": 2, "file": &user_path, "error": "无权访问该路径"})));
@@ -856,12 +981,19 @@ async fn handle_download(
     }
 }
 
+/// 判断解析后的路径是否为某个共享根目录本身（用于禁止删除根目录）
+fn is_root_path(resolved: &std::path::Path, root: &str) -> bool {
+    let a = resolved.to_string_lossy();
+    let a = a.trim_end_matches('/').trim_end_matches('\\');
+    let b = root.trim_end_matches('/').trim_end_matches('\\');
+    a == b
+}
+
 // ============ 文件删除（回收站优先） ============
 
 #[derive(Deserialize)]
 struct DeleteQuery {
     path: Option<String>,
-    root: Option<String>,
 }
 
 async fn handle_delete(
@@ -881,23 +1013,30 @@ async fn handle_delete(
         state.logger.warn("请先添加共享目录", Some(4), Some(serde_json::json!({"op": 3, "file": &user_path, "error": "请先添加共享目录"})));
         return err_json("请先添加共享目录").into_response();
     }
-    let root_idx = match get_root_idx_from_query(query.root.as_deref(), config.roots.len()) {
-        Ok(i) => i,
-        Err(_) => {
-            state.logger.warn("无效的根目录", Some(4), Some(serde_json::json!({"op": 3, "file": &user_path, "error": "无效的根目录"})));
+    let roots = config.roots.clone();
+    drop(config);
+    let (root_idx, relative_path) = match resolve_virtual_path(&user_path, &roots) {
+        Ok(v) => v,
+        Err(e) => {
+            state.logger.warn("无效的根目录", Some(4), Some(serde_json::json!({"op": 3, "file": &user_path, "error": e})));
             return err_json("无效的根目录").into_response();
         }
     };
-    let root = config.roots[root_idx].clone();
-    drop(config);
+    let root = roots[root_idx].path.clone();
 
-    let resolved = match resolve_safe_path(&user_path, &[root.clone()]) {
+    let resolved = match resolve_safe_path(&relative_path, &[root.clone()]) {
         Ok(p) => p,
         Err(_) => {
             state.logger.warn("无权访问该路径", Some(4), Some(serde_json::json!({"op": 3, "file": &user_path, "error": "无权访问该路径"})));
             return err_json("无权访问该路径").into_response();
         }
     };
+
+    // 防御：禁止删除共享根目录本身（虚拟路径只到根名 → 应从共享列表移除）
+    if is_root_path(&resolved, &root) {
+        state.logger.warn("不能在根目录删除", Some(4), Some(serde_json::json!({"op": 3, "file": &user_path, "error": "不能在根目录删除，请用移除", "root": root})));
+        return err_json("不能在根目录删除，请用移除").into_response();
+    }
 
     let is_dir = match fs::metadata(&resolved) {
         Ok(m) => m.is_dir(),
@@ -944,7 +1083,6 @@ async fn handle_delete(
 #[derive(Deserialize)]
 struct BatchDeleteBody {
     paths: Option<Vec<String>>,
-    root: Option<serde_json::Value>,
 }
 
 #[derive(Serialize)]
@@ -961,15 +1099,14 @@ async fn handle_delete_batch(
 ) -> impl IntoResponse {
     let paths = match body.paths {
         Some(p) if !p.is_empty() => p,
-        _ => return err_json("请提供要删除的文件路径列表").into_response(),
+        _ => {
+            state.logger.warn("删除失败", Some(4), Some(serde_json::json!({"op": 3, "file": "", "error": "请提供要删除的文件路径列表"})));
+            return err_json("请提供要删除的文件路径列表").into_response();
+        }
     };
 
     let config = state.config.lock().await;
-    let root_idx = match get_root_idx(body.root.as_ref(), config.roots.len()) {
-        Ok(i) => i,
-        Err(e) => return err_json(&e).into_response(),
-    };
-    let root = config.roots[root_idx].clone();
+    let roots = config.roots.clone();
     drop(config);
 
     let mut success_count = 0u32;
@@ -978,7 +1115,17 @@ async fn handle_delete_batch(
     let mut results: Vec<BatchDeleteResult> = Vec::new();
 
     for path_str in &paths {
-        let resolved = match resolve_safe_path(path_str, &[root.clone()]) {
+        let (root_idx, relative_path) = match resolve_virtual_path(path_str, &roots) {
+            Ok(v) => v,
+            Err(e) => {
+                fail_count += 1;
+                state.logger.warn(&format!("删除失败 · {}", path_str), Some(4), Some(serde_json::json!({"op": 3, "file": path_str, "error": e})));
+                results.push(BatchDeleteResult { path: path_str.clone(), success: false, dest: None, message: Some(e) });
+                continue;
+            }
+        };
+        let root = roots[root_idx].path.clone();
+        let resolved = match resolve_safe_path(&relative_path, &[root.clone()]) {
             Ok(p) => p,
             Err(_) => {
                 fail_count += 1;
@@ -987,6 +1134,14 @@ async fn handle_delete_batch(
                 continue;
             }
         };
+
+        // 防御：禁止删除共享根目录本身（应从共享列表移除）
+        if is_root_path(&resolved, &root) {
+            fail_count += 1;
+            state.logger.warn("不能在根目录删除", Some(4), Some(serde_json::json!({"op": 3, "file": path_str, "error": "不能在根目录删除，请用移除", "root": &root})));
+            results.push(BatchDeleteResult { path: path_str.clone(), success: false, dest: None, message: Some("不能在根目录删除，请用移除".to_string()) });
+            continue;
+        }
 
         let is_dir = match fs::metadata(&resolved) {
             Ok(m) => m.is_dir(),
@@ -998,6 +1153,7 @@ async fn handle_delete_batch(
             }
             Err(_) => {
                 fail_count += 1;
+                state.logger.warn(&format!("删除失败 · {}", path_str), Some(4), Some(serde_json::json!({"op": 3, "file": path_str, "error": "其他原因", "root": &root})));
                 results.push(BatchDeleteResult { path: path_str.clone(), success: false, dest: None, message: Some("其他原因".to_string()) });
                 continue;
             }
@@ -1033,7 +1189,7 @@ async fn handle_delete_batch(
     // 日志：成功聚合，失败单点
     if success_count > 0 {
         let dest = if results.iter().any(|r| r.dest.as_deref() == Some("permanent")) { "permanent" } else { "trash" };
-        state.logger.info(&format!("批量删除"), Some(4), Some(serde_json::json!({"op": if dest == "trash" { 1 } else { 2 }, "count": success_count, "files": success_files, "dest": dest, "root": &root})));
+        state.logger.info(&format!("批量删除"), Some(4), Some(serde_json::json!({"op": if dest == "trash" { 1 } else { 2 }, "count": success_count, "files": success_files, "dest": dest})));
     }
 
     let message = if fail_count == 0 {
@@ -1145,12 +1301,13 @@ struct ServerInfo {
     ip: String,
     port: u16,
     url: String,
-    local: bool,
+    /// 编译时间戳（build.rs 注入），用于判断后端是否最新编译
+    #[serde(rename = "buildTs")]
+    build_ts: String,
 }
 
 async fn handle_server_info(
     State(state): State<Arc<AppState>>,
-    ConnectInfo(addr): ConnectInfo<std::net::SocketAddr>,
 ) -> impl IntoResponse {
     let port = state.config.lock().await.port;
     let ip = get_local_ip();
@@ -1158,7 +1315,7 @@ async fn handle_server_info(
         ip: ip.clone(),
         port,
         url: format!("http://{}:{}", ip, port),
-        local: is_local_client(&addr),
+        build_ts: BUILD_TS.to_string(),
     }))
 }
 
@@ -1322,6 +1479,12 @@ async fn main() {
     let user_data_dir = std::env::var("LANDISK_DATA_DIR")
         .map(std::path::PathBuf::from)
         .unwrap_or(exe_dir);
+    // 统一为绝对路径：LANDISK_DATA_DIR 传相对值（如 dev-data）时，日志/配置「位置」会显示相对路径，统一成绝对
+    let user_data_dir = if user_data_dir.is_absolute() {
+        user_data_dir
+    } else {
+        std::env::current_dir().map(|c| c.join(&user_data_dir)).unwrap_or(user_data_dir)
+    };
 
     let (config, config_path) = config::load_config(&user_data_dir);
     let logger = Logger::new();
@@ -1329,7 +1492,7 @@ async fn main() {
     let log_path = logger.get_log_path().map(|p| p.to_string_lossy().to_string()).unwrap_or_default();
 
     let port = config.port;
-    let roots = config.roots.clone();
+    let roots: Vec<String> = config.roots.iter().map(|r| r.path.clone()).collect();
 
     let app_state = Arc::new(AppState {
         config: tokio::sync::Mutex::new(config),
@@ -1350,6 +1513,7 @@ async fn main() {
         .route("/api/delete", delete(handle_delete))
         .route("/api/delete/batch", post(handle_delete_batch))
         .route("/api/roots", get(handle_roots_get).post(handle_roots_post).delete(handle_roots_delete))
+        .route("/api/roots/rename", put(handle_roots_rename))
         .route("/api/config", get(handle_config_get).put(handle_config_put))
         .route("/api/open/logdir", post(handle_open_logdir))
         .route("/api/server-info", get(handle_server_info))
@@ -1376,6 +1540,7 @@ async fn main() {
     println!("══════════════════════════════════════════");
 
     app_state.logger.info(&format!("[启动] 服务地址 : {}", url), Some(9), Some(serde_json::json!({"op": 1, "desc": "服务地址", "url": url})));
+    app_state.logger.info(&format!("[启动] 编译时间 : {}", BUILD_TS), Some(9), Some(serde_json::json!({"op": 1, "desc": "编译时间", "buildTs": BUILD_TS})));
     if !roots.is_empty() {
         app_state.logger.info(&format!("共享目录 {} 个", roots.len()), Some(9), Some(serde_json::json!({"op": 1, "desc": "共享目录", "count": roots.len(), "dirs": roots})));
     }

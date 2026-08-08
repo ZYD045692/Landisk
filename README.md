@@ -21,8 +21,9 @@ PC 和手机访问的是同一个服务。
 
 ## 功能
 
-- 文件浏览、多根目录切换、面包屑导航
-- 全局拖拽：拖文件到窗口任意位置即可上传，毛玻璃全屏提示
+- 文件浏览、虚拟根目录（所有共享目录平铺展示）、面包屑导航
+- 虚拟根拖入文件夹直接添加共享目录（桌面壳），行内「移除」取消共享不删磁盘文件
+- 全局拖拽：目录内拖文件上传、虚拟根拖文件夹添加共享，毛玻璃全屏提示
 - 冲突弹窗：同名文件可选替换 / 保留两份 / 取消，支持批量统一操作
 - 文件列表刷新时逐格 shimmer 加载效果
 - 删除进回收站 / 永久删除（回收站不可用时自动 fallback）
@@ -38,7 +39,7 @@ PC 和手机访问的是同一个服务。
 - 开机自启（静默托盘）
 - 单实例，多点图标不重复启动
 - 界面管理共享目录，持久化到 `config.json`（默认与程序同目录，可用 `LANDISK_DATA_DIR` 指定）
-- 点击文件可用系统默认程序打开
+- 点击文件可用系统默认程序打开；壳内点文件夹「打开」用 Windows 资源管理器打开
 - 中文文件名上传不乱码
 - 无共享目录时智能提示引导添加
 
@@ -87,10 +88,13 @@ npm run build:tauri   # 一键构建安装包
 
 ```bash
 node test/setup.js            # 创建测试数据
-node test/test-api.js         # API 测试（52项）
+node test/test-api.js         # API 测试（76项）
 node test/setup.js            # 重建测试数据
-node test/test-crawl.js       # 爬虫测试（22项）
+node -r ./test/cdp-wrapper.js test/test-crawl.js   # 爬虫测试（40项）
 node -r ./test/cdp-wrapper.js test/capture-screens.js  # 生成文档截图到 images/
+```
+
+API 和爬虫测试**自动管理后端服务**（开始自动杀旧起新、结束自动关闭），无需手动 `npm run server`。测试前需先 `npm run build`（或 `build:server`）保证 client/dist 是最新前端。
 ```
 
 ## 项目结构
@@ -132,7 +136,7 @@ node -r ./test/cdp-wrapper.js test/capture-screens.js  # 生成文档截图到 i
 
 ```json
 {
-  "roots": ["D:/Desktop"],
+  "roots": [{ "name": "Desktop", "path": "D:/Desktop" }],
   "port": 22580,
   "max_file_size_mb": 500,
   "show_hidden_files": false

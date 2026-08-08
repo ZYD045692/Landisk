@@ -4,9 +4,9 @@
       <el-icon :size="32" color="#909399"><UploadFilled /></el-icon>
       <p class="drop-text">拖拽文件到此处上传</p>
       <el-divider class="upload-divider">
-        <span style="color:#c0c4cc;font-size:14px;">或者</span>
+        <span style="color:#909399;font-size:14px;">或者</span>
       </el-divider>
-      <el-button type="primary" :icon="Plus" @click="triggerFileInput" :loading="uploading">
+      <el-button type="primary" plain :icon="Plus" @click="triggerFileInput" :loading="uploading">
         {{ uploading ? '上传中...' : '选择文件' }}
       </el-button>
     </div>
@@ -64,28 +64,16 @@
         <el-button type="primary" @click="onConfirmOk">确定上传</el-button>
       </template>
     </el-dialog>
-
-    <!-- 上传结果 -->
-    <div v-if="uploadResult" class="upload-result">
-      <el-alert
-        :title="uploadResult"
-        :type="uploadError ? 'error' : 'success'"
-        :closable="true"
-        show-icon
-        @close="uploadResult = ''"
-      />
-    </div>
   </div>
 </template>
 
 <script setup>
-import { ref, computed, inject, watch, onUnmounted } from 'vue'
+import { ref, computed, inject, watch } from 'vue'
 import { Plus } from '@element-plus/icons-vue'
 import { checkConflicts, apiUrl } from '../api'
 
 const props = defineProps({
-  uploadPath: { type: String, default: '/' },
-  rootIndex: { type: Number, default: undefined }
+  uploadPath: { type: String, default: '/' }
 })
 
 const emit = defineEmits(['uploaded'])
@@ -93,9 +81,6 @@ const emit = defineEmits(['uploaded'])
 const uploading = ref(false)
 const progress = ref(0)
 const progressText = ref('')
-const uploadResult = ref('')
-const uploadError = ref(false)
-let resultTimer = null
 
 // 上传确认弹窗
 const showConfirm = ref(false)
@@ -111,10 +96,6 @@ const pagedFiles = computed(() => {
 })
 
 let _confirmResolve = null
-
-onUnmounted(() => {
-  if (resultTimer) clearTimeout(resultTimer)
-})
 
 // 全局拖拽监听
 const droppedFiles = inject('droppedFiles', ref(null))
@@ -137,7 +118,13 @@ function triggerFileInput() {
 async function uploadFiles(fileList) {
   let files = Array.from(fileList).filter(f => !(f.size === 0 && f.type === ''))
   if (files.length === 0) {
-    showTemporaryMsg('不支持上传文件夹，请选择文件', true)
+    ElMessage.error('不支持上传文件夹，请选择文件')
+    // 记 type=1 op=2「不支持上传文件夹」（前端写入例外）
+    fetch(apiUrl('/logs'), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ level: 'warn', type: 1, data: { op: 2, file: '', error: '不支持上传文件夹' } })
+    }).catch(() => {})
     return
   }
 
@@ -145,13 +132,12 @@ async function uploadFiles(fileList) {
   uploading.value = true
   progress.value = 0
   progressText.value = '检查文件冲突...'
-  uploadResult.value = ''
-  uploadError.value = false
 
   let replaceList = []
+  let skipCount = 0
   try {
     // Phase 1: 冲突检查
-    const res = await checkConflicts(props.uploadPath, names, props.rootIndex)
+    const res = await checkConflicts(props.uploadPath, names)
     const conflicts = res.data.conflicts || []
 
     if (conflicts.length > 0) {
@@ -162,10 +148,15 @@ async function uploadFiles(fileList) {
 
       replaceList = result.replaceList
       const skipList = result.skipList || []
+      skipCount = skipList.length
       // 过滤掉取消的文件
       if (skipList.length > 0) {
         files = files.filter(f => !skipList.includes(f.name))
-        if (files.length === 0) { uploading.value = false; return }
+        if (files.length === 0) {
+          uploading.value = false
+          ElMessage.info(`已取消全部上传（${skipCount} 个文件）`)
+          return
+        }
       }
       uploading.value = true
     }
@@ -173,9 +164,6 @@ async function uploadFiles(fileList) {
     // Phase 2: 上传
     const formData = new FormData()
     formData.append('targetPath', props.uploadPath)
-    if (props.rootIndex !== undefined && props.rootIndex !== null) {
-      formData.append('root', props.rootIndex)
-    }
     formData.append('replace', replaceList.join(','))
     let count = 0
     for (const file of files) {
@@ -188,16 +176,24 @@ async function uploadFiles(fileList) {
     progressText.value = `准备上传 ${count} 个文件...`
 
     const data = await xhrUpload(formData)
-    uploadResult.value = data.message || '上传完成'
-    uploadError.value = false
+    // data.message 含批量计数，如「新增(2个文件)，保留(1个文件)，替换(1个文件)」
+    let msg = data.message || '上传完成'
+    if (skipCount > 0) msg += `，取消(${skipCount}个)`
+    ElMessage.success(msg)
     const newNames = (data.data?.files || []).map(f => f.name).filter(Boolean)
     emit('uploaded', newNames)
   } catch (err) {
-    uploadResult.value = err.message || '上传失败'
-    uploadError.value = true
+    ElMessage.error(err.message || '上传失败')
+    // 网络错误后端记不到（连接没建立），前端补一条 type=1 op=2
+    if (String(err.message || '').includes('网络错误')) {
+      fetch(apiUrl('/logs'), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ level: 'error', type: 1, data: { op: 2, file: names.join(','), error: '网络错误' } })
+      }).catch(() => {})
+    }
   } finally {
     uploading.value = false
-    resultTimer = setTimeout(() => { uploadResult.value = '' }, 3000)
   }
 }
 
@@ -296,18 +292,13 @@ function onConfirmCancel() {
     _confirmResolve(null)
     _confirmResolve = null
   }
+  ElMessage.info('已取消上传')
   // 记取消日志
   fetch(apiUrl('/logs'), {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ level: 'info', type: 1, data: { op: 0, count: allFiles.value.length, files: allFiles.value.map(f => f.name), dir: props.uploadPath } })
   }).catch(() => {})
-}
-
-function showTemporaryMsg(msg, isError) {
-  uploadResult.value = msg
-  uploadError.value = isError
-  resultTimer = setTimeout(() => { uploadResult.value = '' }, 3000)
 }
 </script>
 
@@ -326,7 +317,7 @@ function showTemporaryMsg(msg, isError) {
 }
 
 .drop-text {
-  color: #000;
+  color: #606266;
   margin: 8px 0 4px;
   font-size: 16px;
   font-weight: 500;
@@ -348,10 +339,6 @@ function showTemporaryMsg(msg, isError) {
   text-align: center;
   color: #606266;
   font-size: 13px;
-  margin-top: 8px;
-}
-
-.upload-result {
   margin-top: 8px;
 }
 

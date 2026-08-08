@@ -16,16 +16,11 @@ export function apiUrl(path) {
 }
 
 /**
- * 获取目录文件列表
- * @param {string} dirPath - 目录路径，默认 '/'
- * @param {number} [rootIndex] - 根目录索引（多根目录时指定）
+ * 获取目录文件列表（虚拟路径，第一段为根目录名）
+ * @param {string} dirPath - 虚拟路径，默认 '/'（虚拟根，列出所有共享目录）
  */
-export function fetchFiles(dirPath = '/', rootIndex) {
-  const params = { path: dirPath }
-  if (rootIndex !== undefined && rootIndex !== null) {
-    params.root = rootIndex
-  }
-  return api.get('/files', { params })
+export function fetchFiles(dirPath = '/') {
+  return api.get('/files', { params: { path: dirPath } })
 }
 
 export function fetchRoots() {
@@ -33,35 +28,28 @@ export function fetchRoots() {
 }
 
 /**
- * 获取下载链接
- * @param {string} filePath - 文件路径
+ * 获取下载链接（虚拟路径）
+ * @param {string} filePath - 虚拟文件路径
  */
-export function getDownloadUrl(filePath, rootIndex) {
-  let url = `${apiUrl('/download')}?path=${encodeURIComponent(filePath)}`
-  if (rootIndex !== undefined && rootIndex !== null) {
-    url += `&root=${rootIndex}`
-  }
-  return url
+export function getDownloadUrl(filePath) {
+  return `${apiUrl('/download')}?path=${encodeURIComponent(filePath)}`
 }
 
 /**
- * 删除文件或目录
- * @param {string} filePath - 文件路径
+ * 删除文件或目录（虚拟路径）
+ * @param {string} filePath - 虚拟文件路径
  */
-export function deleteFile(filePath, rootIndex) {
-  const params = { path: filePath }
-  if (rootIndex !== undefined && rootIndex !== null) {
-    params.root = rootIndex
-  }
-  return api.delete('/delete', { params })
+export function deleteFile(filePath) {
+  return api.delete('/delete', { params: { path: filePath } })
 }
 
 /**
  * 添加共享目录
  * @param {string} dirPath - 要添加的目录绝对路径
+ * @param {string} [name] - 根目录名称（默认取路径最后一段，须唯一）
  */
-export function addRoot(dirPath) {
-  return api.post('/roots', { path: dirPath })
+export function addRoot(dirPath, name) {
+  return api.post('/roots', { path: dirPath, name })
 }
 
 /**
@@ -73,14 +61,19 @@ export function removeRoot(dirPath) {
 }
 
 /**
- * 检查上传文件冲突
+ * 重命名共享目录
+ * @param {string} dirPath - 根目录绝对路径
+ * @param {string} newName - 新名称（须唯一）
  */
-export function checkConflicts(targetPath, names, rootIndex) {
-  const body = { targetPath, names }
-  if (rootIndex !== undefined && rootIndex !== null) {
-    body.root = rootIndex
-  }
-  return api.post('/upload/check', body)
+export function renameRoot(dirPath, newName) {
+  return api.put('/roots/rename', { path: dirPath, newName })
+}
+
+/**
+ * 检查上传文件冲突（虚拟路径）
+ */
+export function checkConflicts(targetPath, names) {
+  return api.post('/upload/check', { targetPath, names })
 }
 
 /**
@@ -120,16 +113,12 @@ export function updateConfig(data) {
 }
 
 /**
- * 用 fetch 下载文件（支持 JSON 错误检测）
- * @param {string} filePath - 文件路径
- * @param {number} [rootIndex] - 根目录索引
+ * 用 fetch 下载文件（支持 JSON 错误检测，虚拟路径）
+ * @param {string} filePath - 虚拟文件路径
  * @returns {Promise<{response: Response, isJson: boolean, data: any}>}
  */
-export async function downloadFileBlob(filePath, rootIndex) {
-  let url = `${apiUrl('/download')}?path=${encodeURIComponent(filePath)}`
-  if (rootIndex !== undefined && rootIndex !== null) {
-    url += `&root=${rootIndex}`
-  }
+export async function downloadFileBlob(filePath) {
+  const url = `${apiUrl('/download')}?path=${encodeURIComponent(filePath)}`
   const response = await fetch(url)
   const ct = response.headers.get('content-type') || ''
   const isJson = ct.includes('json')
