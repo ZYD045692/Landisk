@@ -209,6 +209,25 @@ async function main() {
     await cdpClick('.header-right [title="设置"]');
     await sleep(1800);
     await shot('settings.png');
+    await cdpRaw('Input.dispatchMouseEvent',{type:'mousePressed',x:50,y:50,button:'left',clickCount:1});
+    await cdpRaw('Input.dispatchMouseEvent',{type:'mouseReleased',x:50,y:50,button:'left',clickCount:1});
+    await sleep(1000);
+
+    // ═══════════════════════════════════════
+    // Phase C: 移动端（切手机视口）— 卡片列表
+    // ═══════════════════════════════════════
+    console.log('\n📱 模式 → MOBILE (窗口切 390x844，卡片列表)');
+    await resizeWindow(390, 844);
+    await sleep(800);
+
+    // ── 11. 移动端卡片列表（testa 目录） ──
+    await nav(`${BASE}/?path=/testdira/testa&shell=0`);
+    await sleep(3000);
+    await shot('mobile-list.png');
+
+    // 切回桌面尺寸
+    await resizeWindow(1024, 730);
+    await sleep(500);
 
   } catch (e) {
     console.error('  ✗ 截图过程出错:', e.message);

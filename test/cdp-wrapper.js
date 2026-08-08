@@ -144,15 +144,20 @@ async function connectCDP(targetUrl) {
   ws.on('message', onMessage);
   ws.on('close', () => { ws = null; });
   await cdp('Runtime.enable');
-  // Set window size to 1024x730
+  await resizeWindow(1024, 730);
+}
+
+/** 调整浏览器窗口大小（截图脚本可随时调用，如切移动端尺寸） */
+global.resizeWindow = async function (width, height) {
+  if (!ws) await connectCDP();
   try {
     const { windowId } = await cdp('Browser.getWindowForTarget');
-    await cdp('Browser.setWindowBounds', { windowId, bounds: { width: 1024, height: 730 } });
-    console.error('  📐 窗口已设为 1024x730');
+    await cdp('Browser.setWindowBounds', { windowId, bounds: { width, height } });
+    console.error(`  📐 窗口已设为 ${width}x${height}`);
   } catch (e) {
-    console.error('  ⚠️ 窗口大小设置失败:', e.message);
+    console.error(`  ⚠️ 窗口大小设置失败 (${width}x${height}):`, e.message);
   }
-}
+};
 
 let connecting = null;
 async function ensureCDP() {
