@@ -67,7 +67,7 @@
 | `test/server-mgr.js` | 测试用服务管理：自动构建前端 → 杀旧 → 起新 → 就绪 → 停止 |
 | `test/test-api.js` | API 功能测试（87 项） |
 | `test/test-crawl.js` | 爬虫功能测试（63 项），CDP 真实鼠标操作，双模式（网页端/桌面应用） |
-| `test/capture-screens.js` | 用 CDP 截图文档用图到 `images/` |
+| `test/capture-screens.js` | 用 CDP 截图文档用图到 `images/`（网页端/桌面应用/移动端三种模式） |
 | `test/cdp-wrapper.js` | CDP 辅助：注入 `nav` / `safe` / `cdpRaw` 等全局函数 |
 
 ## 架构
