@@ -77,7 +77,7 @@
           style="width: 100%"
           stripe
           row-class-name="file-row"
-          @row-click="handleRowClick"
+          @row-click="openIfDirectory"
           @selection-change="onSelectionChange"
         >
           <el-table-column type="selection" width="40" />
@@ -156,17 +156,14 @@
           :key="row.name"
           class="mobile-file-item"
         >
-          <div
-            class="mobile-file-main"
-            @click="row.isDirectory ? openDir(row.name) : downloadFile(row)"
-          >
+          <div class="mobile-file-main">
             <div class="mobile-file-icon">
               <el-icon :size="28" :color="getIconInfo(row).color">
                 <component :is="getIconInfo(row).icon" />
               </el-icon>
             </div>
             <div class="mobile-file-info">
-              <div class="mobile-file-name">{{ row.name }}</div>
+              <div class="mobile-file-name" @click="openIfDirectory(row)">{{ row.name }}</div>
               <div class="mobile-file-meta">
                 <span v-if="!row.isDirectory">{{ formatFileSize(row.size) }} · </span>
                 <span>{{ formatDate(row.modified) }}</span>
@@ -401,8 +398,8 @@ async function batchDownload() {
   for (const row of files) {
     const fpath = (props.currentPath === '/' ? '' : props.currentPath) + '/' + row.name
     try {
-      const { response, isJson, data } = await downloadFileBlob(fpath)
-      if (isJson) {
+      const { response, isError, data } = await downloadFileBlob(fpath)
+      if (isError) {
         failures.push({ name: row.name, message: data?.message || '下载失败' })
         continue
       }
@@ -444,8 +441,8 @@ function openDir(name) {
 async function downloadFile(row) {
   const fpath = (props.currentPath === '/' ? '' : props.currentPath) + '/' + row.name
   try {
-    const { response, isJson, data } = await downloadFileBlob(fpath)
-    if (isJson) {
+    const { response, isError, data } = await downloadFileBlob(fpath)
+    if (isError) {
       ElMessage.error(data?.message || '下载失败')
       emit('retry')
       return
@@ -599,11 +596,10 @@ function handleFileAction(row) {
   }
 }
 
-function handleRowClick(row) {
+// 行内/文件名点击：仅文件夹进入目录；文件行不触发（打开/下载走操作列按钮）
+function openIfDirectory(row) {
   if (row.isDirectory) {
     openDir(row.name)
-  } else {
-    handleFileAction(row)
   }
 }
 </script>
@@ -760,13 +756,6 @@ function handleRowClick(row) {
   align-items: center;
   flex: 1;
   min-width: 0;
-  cursor: pointer;
-}
-
-.mobile-file-main:active {
-  background: #f5f7fa;
-  margin: -10px -12px;
-  padding: 10px 12px;
 }
 
 .mobile-file-icon {
@@ -786,6 +775,12 @@ function handleRowClick(row) {
   text-overflow: ellipsis;
   white-space: nowrap;
   margin-bottom: 2px;
+  cursor: pointer;
+}
+
+.mobile-file-name:active {
+  background: #f5f7fa;
+  border-radius: 4px;
 }
 
 .mobile-file-meta {
