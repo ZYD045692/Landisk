@@ -8,7 +8,7 @@
 
     <!-- 无共享目录时提示 -->
     <div v-if="roots.length === 0">
-      <el-empty description="暂无共享目录" :image-size="100">
+      <el-empty :image-size="100">
         <template #description>
           <p style="margin:0 0 8px;color:#606266;font-weight:500;font-size:14px">请先添加共享目录</p>
           <p style="margin:0;color:#80858a;font-size:14px">点击右上角设置添加一个本地文件夹为共享目录</p>

@@ -246,7 +246,7 @@ function openSubDialog() {
 async function handleSubSave() {
   const val = Number(subDialogValue.value)
   if (val < 1 || val > 9999) {
-    ElMessage.warning('范围 1-9999 MB')
+    ElMessage.warning('最大上传需在 1-9999 MB 之间')
     return
   }
   configMaxSize.value = val

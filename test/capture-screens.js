@@ -1,12 +1,20 @@
 /**
  * LanDisk 截图脚本 — 用 CDP 打开页面，逐场景截图到 images/
  * 用法: node -r ./cdp-wrapper.js test/capture-screens.js
- * 前置: npm run server + setup.js 已运行
- * 输出: images/01..08-*.png
+ *
+ * 自动管理服务（同爬虫测试）：杀旧 → 构建前端 → 起新 → 等待就绪 → 结束后停止。
+ * 双模式截图（同爬虫测试）：
+ *   ① 网页端模式（?shell=0）—— 截「下载类」界面：文件浏览(下载按钮)、多选批量(批量下载)、
+ *      面包屑、扫码、拖拽上传、冲突弹窗、删除确认、日志查看器；
+ *   ② 注入 __TAURI_INTERNALS__ 切桌面应用模式 —— 截「打开类」界面：虚拟根(行内打开/移除)、
+ *      设置弹窗(开机自启行仅壳内显示)。
+ * 输出: images/*.png（语义命名，无编号；引用顺序见 Landisk.md）
  */
 const fs = require('fs');
 const path = require('path');
 const V = require('./verify');
+const { startServer, stopServer, backupConfig, clearConfigRoots, restoreConfig } = require('./server-mgr');
+const { verifyClean } = require('./verify-clean');
 
 const BASE = 'http://localhost:22580';
 const DIR_A = path.join(__dirname, 'testdir', 'testdira');
@@ -77,19 +85,34 @@ async function cdpSelectAll() {
 
 async function main() {
   console.log('═══════════════════════════════════════');
-  console.log('  LanDisk 界面截图');
+  console.log('  LanDisk 界面截图（自动起服务 + 双模式）');
   console.log('═══════════════════════════════════════\n');
 
   if (!fs.existsSync(OUT)) fs.mkdirSync(OUT, { recursive: true });
 
-  // CDP 就绪
-  await nav(`${BASE}/`);
-  await sleep(2500);
-  const title = await safe('document.title');
-  if (typeof title !== 'string' || title.includes('ERR')) { console.error('  ✗ CDP 不可用'); process.exit(1); }
-  console.log('  ✔ Chrome CDP 连接正常\n');
+  // 测试前必做：备份并清空共享根（保护用户手动添加的真实共享目录）→ 杀旧后端 → 自动启动新后端
+  backupConfig();
+  clearConfigRoots();
+  if (!(await startServer())) {
+    console.error('后端未能启动，终止截图');
+    process.exit(1);
+  }
+
+  // 关闭 Chrome（结束清理）
+  async function closeBrowser() {
+    try { await cdpRaw('Browser.close'); } catch {}
+  }
 
   try {
+    // CDP 就绪
+    await waitCDP();
+    await cdpRaw('Page.enable');
+    await nav(`${BASE}/?path=/&shell=0`);
+    await sleep(2000);
+    const title = await safe('document.title');
+    if (typeof title !== 'string' || title.includes('ERR')) throw new Error('CDP not ready: ' + JSON.stringify(title));
+    console.log('  ✔ Chrome CDP 连接正常\n');
+
     // ── 确保根目录存在 ──
     const rootsRes = await req('GET', '/api/roots');
     const roots = rootsRes?.data?.data?.roots || [];
@@ -102,84 +125,99 @@ async function main() {
       await sleep(800);
     }
 
+    // ═══════════════════════════════════════
+    // Phase A: 网页端模式（?shell=0）— 下载类界面
+    // ═══════════════════════════════════════
+    console.log('🟢 模式 → WEB (网页端，下载/批量下载类界面)\n');
+
     // 刷新页面加载虚拟根
-    await nav(`${BASE}/?path=/`);
+    await nav(`${BASE}/?path=/&shell=0`);
     await sleep(3000);
 
-    // ════════════ 09 虚拟根目录（列出所有共享目录） ════════════
-    await shot('09-virtual-root.png');
+    // ── 1. 手机扫码 ──
+    await cdpClick('.header-right [title="扫码访问"]');
+    await sleep(1800);
+    await shot('qr-code.png');
+    await cdpRaw('Input.dispatchMouseEvent',{type:'mousePressed',x:50,y:50,button:'left',clickCount:1});
+    await cdpRaw('Input.dispatchMouseEvent',{type:'mouseReleased',x:50,y:50,button:'left',clickCount:1});
+    await sleep(1200);
 
-    // ════════════ 10 面包屑导航 ════════════
+    // ── 2. 文件浏览主界面（网页端：行按钮=下载） ──
     await safe(clickFolder('testdira'));
     await sleep(2000);
     await safe(clickFolder('testa'));
     await sleep(2000);
+    await shot('file-browser.png');
+
+    // ── 3. 面包屑导航 ──
     await safe(clickFolder('subdir'));
     await sleep(2000);
-    await shot('10-breadcrumb.png');
+    await shot('breadcrumb.png');
     // 点面包屑 "testa" 回到 testa/
     await cdpClickText('.el-breadcrumb__item a', 'testa');
     await sleep(2000);
 
-    // ════════════ 01 文件浏览主界面 ════════════
-    await shot('01-file-browser.png');
-
-    // ════════════ 02 多选批量操作 ════════════
+    // ── 4. 多选批量操作（网页端：批量栏含「批量下载」） ──
     await cdpSelectAll();
     await sleep(1000);
-    await shot('02-batch-select.png');
+    await shot('batch-select.png');
     await cdpClick('.batch-bar .el-button:last-child'); // 取消选择
     await sleep(800);
 
-    // ════════════ 07 上传冲突弹窗 ════════════
+    // ── 5. 全局拖拽覆盖层（真实目录拖入文件 = 上传） ──
+    await safe(`(()=>{window.dispatchEvent(new DragEvent('dragover',{bubbles:true,cancelable:true}));return'ok'})()`);
+    await sleep(900);
+    await shot('drag-overlay.png');
+    await safe(`(()=>{window.dispatchEvent(new DragEvent('dragleave',{clientX:-1,clientY:-1}));return'ok'})()`);
+    await sleep(600);
+
+    // ── 6. 上传冲突弹窗 ──
     await safe(dropUpload('crawl_up.txt', '第一次上传内容'));
     await sleep(4000); // 等上传完成 + 成功提示消失
     await safe(dropUpload('crawl_up.txt', '同名冲突内容'));
     await sleep(3000); // 等冲突弹窗出现
-    await shot('07-upload-conflict.png');
+    await shot('upload-conflict.png');
     await cdpClickText('.el-dialog .el-button:not(.el-button--primary)', '取消上传');
     await sleep(1500);
 
-    // ════════════ 08 删除确认弹窗 ════════════
+    // ── 7. 删除确认弹窗 ──
     await safe(`(()=>{for(const r of document.querySelectorAll('tr.el-table__row')){const b=r.querySelector('td:last-child button:last-child');if(b){b.click();return'ok';}}return'notfound';})()`);
     await sleep(1500);
-    await shot('08-delete-confirm.png');
+    await shot('delete-confirm.png');
     await cdpClickText('.el-message-box__btns .el-button', '取消');
     await sleep(1200);
 
-    // ════════════ 03 设置弹窗 ════════════
-    await cdpClick('.header-right [title="设置"]');
-    await sleep(1800);
-    await shot('03-settings.png');
-    await cdpRaw('Input.dispatchMouseEvent',{type:'mousePressed',x:50,y:50,button:'left',clickCount:1});
-    await cdpRaw('Input.dispatchMouseEvent',{type:'mouseReleased',x:50,y:50,button:'left',clickCount:1});
-    await sleep(1200);
-
-    // ════════════ 04 日志查看器 ════════════
+    // ── 8. 日志查看器 ──
     await cdpClick('.header-right [title="服务器日志"]');
     await sleep(1800);
-    await shot('04-log-viewer.png');
+    await shot('log-viewer.png');
     await cdpClick('.el-dialog__headerbtn');
     await sleep(1200);
 
-    // ════════════ 05 手机扫码 ════════════
-    await cdpClick('.header-right [title="扫码访问"]');
-    await sleep(1800);
-    await shot('05-qr-code.png');
-    await cdpRaw('Input.dispatchMouseEvent',{type:'mousePressed',x:50,y:50,button:'left',clickCount:1});
-    await cdpRaw('Input.dispatchMouseEvent',{type:'mouseReleased',x:50,y:50,button:'left',clickCount:1});
-    await sleep(1200);
+    // ═══════════════════════════════════════
+    // Phase B: 桌面应用模式（注入 __TAURI_INTERNALS__）— 打开类界面
+    // ═══════════════════════════════════════
+    console.log('\n🔵 模式 → DESKTOP (注入 __TAURI_INTERNALS__，打开/开机自启类界面)');
+    await cdpRaw('Page.addScriptToEvaluateOnNewDocument', { source: "window.__TAURI_INTERNALS__ = window.__TAURI_INTERNALS__ || {}; if(!window.__TAURI_INTERNALS__.convertFileSrc) window.__TAURI_INTERNALS__.convertFileSrc = function(p){ return 'data:text/plain;base64,' + btoa('landisk-shell-upload'); }; if(!window.__TAURI_INTERNALS__.invoke) window.__TAURI_INTERNALS__.invoke = function(cmd){ return Promise.resolve(false); };" });
 
-    // ════════════ 06 全局拖拽覆盖层 ════════════
-    await safe(`(()=>{window.dispatchEvent(new DragEvent('dragover',{bubbles:true,cancelable:true}));return'ok'})()`);
-    await sleep(900);
-    await shot('06-drag-overlay.png');
-    await safe(`(()=>{window.dispatchEvent(new DragEvent('dragleave',{clientX:-1,clientY:-1}));return'ok'})()`);
-    await sleep(600);
+    // ── 9. 虚拟根目录（桌面应用：行按钮=打开[资源管理器]+移除） ──
+    await nav(`${BASE}/?path=/`);
+    await sleep(3000);
+    await shot('virtual-root.png');
+
+    // ── 10. 设置弹窗（桌面应用：含开机自启行） ──
+    await cdpClick('.header-right [title="设置"]');
+    await sleep(1800);
+    await shot('settings.png');
 
   } catch (e) {
     console.error('  ✗ 截图过程出错:', e.message);
     process.exit(1);
+  } finally {
+    verifyClean();
+    await stopServer();
+    restoreConfig();
+    await closeBrowser();
   }
 
   console.log(`\n✅ 完成，共 ${seq} 张截图 → ${path.relative(__dirname, OUT)}/`);

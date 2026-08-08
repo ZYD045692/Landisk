@@ -163,7 +163,7 @@ async function handleClearDisplay() {
   try {
     await clearLogDisplay()
     logEntries.value = []
-    ElMessage.success('已清空显示')
+    ElMessage.success('已清除显示')
   } catch {
     ElMessage.error('清空失败')
     fetch(apiUrl('/logs'), {

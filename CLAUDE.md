@@ -1,6 +1,6 @@
 # CLAUDE.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+本文件是给 Claude Code 的项目工作手册：在这个仓库里怎么安全地改代码。**项目是什么、怎么用、整体架构见 [README.md](README.md)**，日志格式与 type/op 码表见 [LOG_FORMAT.md](LOG_FORMAT.md)，测试计划见 [TESTPLAN.md](TESTPLAN.md)。
 
 ## 常用命令
 
@@ -52,22 +52,7 @@ del /F src-tauri\server\target\debug\landisk-server.exe
 cargo build --manifest-path src-tauri/server/Cargo.toml
 ```
 
-## 项目概览
-
-**LanDisk** — 局域网文件快传桌面应用。Tauri 2 壳以 sidecar 方式启动 Rust axum HTTP 服务，提供 REST API 和 Vue 3 + Element Plus 前端。手机和 PC 在同一局域网下访问同一服务，扫码即连。
-
-| 层 | 技术 |
-|---|---|
-| 桌面端 | Tauri 2 (Rust) — 窗口/托盘/单实例锁/开机自启 |
-| 后端 | axum (Rust) — sidecar 编译为独立 exe |
-| 前端 | Vue 3 + Vite + Element Plus |
-| 打包 | NSIS |
-
-### Tauri 架构
-
-`src-tauri/src/lib.rs` 在 setup 中程序化构建窗口（1000×602）、启动 sidecar、创建系统托盘。窗口由 Rust 构建（tauri.conf.json 中 windows 留空），`initialization_script` 注入 `__LANDISK_PORT__` 供前端 API 使用。前端在 webview 内以 `tauri://localhost` 协议加载，权限走本地路径。
-
-### 构建流程
+## 构建流程
 
 ```
 ① npm --prefix client run build             前端编译到 client/dist/
@@ -76,12 +61,9 @@ cargo build --manifest-path src-tauri/server/Cargo.toml
 ④ node scripts/copy-installer.js            把安装包复制到 dist/
 ```
 
-`npm run build:server` = ①+②
-`npm run build:tauri`  = ①+②+③+④
+`npm run build:server` = ①+②；`npm run build:tauri` = ①+②+③+④。产物：`dist/LanDisk_*_x64-setup.exe`。
 
-产物：`dist/LanDisk_*_x64-setup.exe`
-
-### 后端结构（Rust）
+## 后端结构（Rust）
 
 ```
 src-tauri/server/src/
@@ -95,7 +77,7 @@ src-tauri/server/src/
 
 数据目录优先级：`LANDISK_DATA_DIR` 环境变量（dev/test 指向 `dev-data/`）→ 否则为程序（landisk-server.exe）所在目录。`config.json` 存于数据目录下，首次运行自动创建，字段：`roots[]`（`[{name, path}]`，name 唯一）、`port`, `max_file_size_mb`, `show_hidden_files`。
 
-## 架构模式
+## 架构模式（改代码必读）
 
 ### 路径安全门
 
@@ -106,13 +88,9 @@ src-tauri/server/src/
 
 **添加新 API 时，任何接受用户路径的参数都必须经此函数校验。**
 
-### 前端路由
+### 前端路由与虚拟路径
 
 SPA，浏览路径存储在 URL query `?path=/根名/子路径`（**虚拟路径**，第一段为根目录 name，`/` 为虚拟根列出所有根目录）。`FileBrowser.vue` 通过 `vue-router` 的 `useRoute().query.path` 读写，目录导航通过 `router.push({ query: { path } })` 实现，不刷新页面。所有 API 的 `path` 参数均为虚拟路径，由后端 `resolve_virtual_path` 解析到具体根目录。
-
-### 全局状态注入
-
-`App.vue` 通过 `provide()` 注入 roots（根目录列表）和 droppedFiles（全局拖拽文件）。子组件通过 `inject()` 消费。
 
 ### Tauri webview 与 API 通信
 
@@ -123,7 +101,7 @@ SPA，浏览路径存储在 URL query `?path=/根名/子路径`（**虚拟路径
 | 端点 | 方法 | 说明 |
 |---|---|---|
 | `/api/files` | GET | 目录列表，`?path=`（虚拟路径，第一段为根名；`/` 返回虚拟根列表） |
-| `/api/files/open` | POST | 打开文件（系统默认程序）或目录（Windows 资源管理器，均仅桌面端可打开，远程设备拒绝），`path` 为虚拟路径 |
+| `/api/files/open` | POST | 打开文件（系统默认程序）或目录（Windows 资源管理器，均仅桌面应用可打开，远程设备拒绝），`path` 为虚拟路径 |
 | `/api/upload` | POST | 上传文件（multipart），`targetPath` 为虚拟路径 |
 | `/api/upload/check` | POST | 冲突检测（返回已存在的文件名），`targetPath` 为虚拟路径 |
 | `/api/download` | GET | 文件下载，`?path=`（虚拟路径） |
@@ -136,7 +114,7 @@ SPA，浏览路径存储在 URL query `?path=/根名/子路径`（**虚拟路径
 | `/api/logs` | GET/DELETE | 日志查询 / 清除（缓冲池+文件+归档） |
 | `/api/logs/display` | DELETE | 仅清缓冲池 |
 | `/api/logs/stream` | GET | SSE 实时日志推流 |
-| `/api/open/logdir` | POST | 打开日志目录（本机资源管理器，仅桌面端可调） |
+| `/api/open/logdir` | POST | 打开日志目录（本机资源管理器，仅桌面应用可调） |
 
 ## 上传流程
 
@@ -168,7 +146,7 @@ client/src/
 │   └── FileBrowser.vue     # 主视图，组合 BreadcrumbNav + UploadZone + FileTable
 ├── utils/
 │   ├── format.js           # getFileIcon(70+种图标，颜色分类)、formatFileSize、formatDate
-│   ├── env.js              # 运行环境：isShell（壳/浏览器），启动时一次性判定
+│   ├── env.js              # 运行环境：isShell（桌面应用/网页端），启动时一次性判定
 │   └── logFormat.js        # 日志条目解析渲染（type/op 码表 → 可读文本）
 ├── router/index.js         # 单路由 / + 兜底重定向
 ├── App.vue                 # 根组件：Header/Footer、设置弹窗、二维码、全局拖拽遮罩
@@ -180,29 +158,21 @@ client/src/
 `App.vue` 中监听 `@dragover`/`@drop`，显示毛玻璃全屏提示（`backdrop-filter: blur(8px)`）。三图标对称三角布局。`dragleave` 事件检测鼠标离开窗口边界时关闭覆盖层。
 
 **拖拽分两套逻辑**：
-- **桌面端内（原生拖拽）**：`src-tauri/src/lib.rs` 的 `on_window_event` 接管 `WindowEvent::DragDrop`（Tauri 原生拖拽会消费 DOM 的 `dragover`/`drop`），把绝对路径 + `isDir` 用 `window.eval` 派发 `landisk-drop` / `landisk-dragover` DOM CustomEvent，前端 `App.vue` 监听处理。虚拟根拖入文件夹 = 添加共享目录（`addRootsFromPaths`，重名弹窗改名）；真实目录拖入文件 = 上传（`convertFileSrc` 经 asset 协议读本地文件转 File 交给 UploadZone，保进度条/冲突弹窗）。桌面端拖拽需要 tauri 的 `protocol-asset` feature + `assetProtocol` 配置。
+- **桌面应用内（原生拖拽）**：`src-tauri/src/lib.rs` 的 `on_window_event` 接管 `WindowEvent::DragDrop`（Tauri 原生拖拽会消费 DOM 的 `dragover`/`drop`），把绝对路径 + `isDir` 用 `window.eval` 派发 `landisk-drop` / `landisk-dragover` DOM CustomEvent，前端 `App.vue` 监听处理。虚拟根拖入文件夹 = 添加共享目录（`addRootsFromPaths`，重名弹窗改名）；真实目录拖入文件 = 上传（`convertFileSrc` 经 asset 协议读本地文件转 File 交给 UploadZone，保进度条/冲突弹窗）。桌面应用拖拽需要 tauri 的 `protocol-asset` feature + `assetProtocol` 配置。
 - **网页端内（DOM 拖拽）**：走 `@drop.prevent="onGlobalDrop"`。**虚拟根拖拽限缩**：浏览器拿不到绝对路径，`App.vue` 的 `setDragover` 在虚拟根 + 非壳时不显示全屏遮罩，但 `onGlobalDrop` 会提示「请在桌面应用中拖入文件夹添加共享目录，或到右上角设置中添加」（避免操作习惯不同步），不添加共享；虚拟根的「在桌面应用中拖入文件夹可添加共享目录」提示两端都显示；真实目录拖入文件 = 上传。
 - 判断依据是 `useRoute().query.path` 是否为虚拟根，见 `App.vue` 的 `isVirtualRoot`。
 
-**环境判断**：`client/src/utils/env.js` 启动时一次性判定 `isShell`（`window.__TAURI_INTERNALS__`，可用 `?shell=1/0` 强制——同机浏览器配 `?shell=1` 可测全部桌面端操作，后端对本机请求天然放行）。客户端只有桌面端/网页端两种；所有打开类操作（文件/文件夹/日志目录）按 `isShell` 显隐，后端以 `is_local_client`（IP 主机信任）作安全门，「本机」不再是客户端分类。爬虫测试先以网页端模式运行（`?shell=0`），再经 CDP `Page.addScriptToEvaluateOnNewDocument` 注入 `__TAURI_INTERNALS__` 切桌面端模式。
-
-### 日志格式
-
-日志采用结构化 JSON，完整 type/op 码表见 [LOG_FORMAT.md](LOG_FORMAT.md)。
+**环境判断**：`client/src/utils/env.js` 启动时一次性判定 `isShell`（`window.__TAURI_INTERNALS__`，可用 `?shell=1/0` 强制——同机浏览器配 `?shell=1` 可测全部桌面应用操作，后端对本机请求天然放行）。客户端只有桌面应用/网页端两种；所有打开类操作（文件/文件夹/日志目录）按 `isShell` 显隐，后端以 `is_local_client`（IP 主机信任）作安全门，「本机」不再是客户端分类。爬虫测试先以网页端模式运行（`?shell=0`），再经 CDP `Page.addScriptToEvaluateOnNewDocument` 注入 `__TAURI_INTERNALS__` 切桌面应用模式。
 
 ## 日志系统
 
-`logger/mod.rs` 维护一个环形缓冲区（`ringBuffer[]`），上限 **200 条**。所有日志查询 API（`GET /api/logs`）直接从内存读取，零文件 I/O。
+日志采用结构化 JSON，完整 type/op 码表见 [LOG_FORMAT.md](LOG_FORMAT.md)。**整体流转链路（写日志 → 缓冲池/文件/SSE 三路 → 前端查看器）见 [README.md](README.md#日志流转)**。
 
-**服务启动时**自动从 `landisk.log` 末尾解析最后 **100 条** JSON 条目补入缓冲池，避免重启后日志查看器空白。
+`logger/mod.rs` 维护环形缓冲区（`ringBuffer[]`），上限 **200 条**。所有日志查询 API（`GET /api/logs`）直接从内存读取，零文件 I/O。
 
-日志文件写入 `<数据目录>/logs/landisk.log`，超过 1 MB 或跨天时归档为 `landisk-{date}.log`。
+**服务启动时**自动从 `landisk.log` 末尾解析最后 **100 条** JSON 条目补入缓冲池，避免重启后日志查看器空白。日志文件写入 `<数据目录>/logs/landisk.log`，超过 1 MB 或跨天时归档为 `landisk-{date}.log`。SSE 推流：日志写入环形缓冲区时通过 `broadcast::channel` 推送，前端 `EventSource` 监听。
 
-### SSE 实时推流
-
-日志写入环形缓冲区时通过 `broadcast::channel` 推送。日志 API 路由注册了 `GET /api/logs/stream` SSE 端点，前端通过 `EventSource` 监听实时推送新日志，无需轮询。
-
-## 新增功能日志规范
+### 新增功能日志规范
 
 新增功能时必须添加对应的日志记录，修改顺序严格如下：
 
@@ -219,17 +189,11 @@ client/src/
 
 **日志系统核心文件：`src-tauri/server/src/logger/mod.rs`**（环形缓冲区 + 文件写入 + SSE 推流三合一）。
 
-## 路径归一化
+## 其他约定
 
-根目录添加时使用 `dunce::canonicalize` 统一路径大小写，避免 Windows 盘符大小写（`C:` / `c:`、`D:` / `d:` 等）导致同一目录被重复添加。
-
-## 路由兜底
-
-`client/src/router/index.js` 设有 `/:pathMatch(.*)*` 兜底路由，未知路径自动重定向到 `/`。
-
-## 无共享目录提示
-
-`client/src/views/FileBrowser.vue` 在 `roots.length === 0` 时显示引导提示，URL 自动清除查询参数。
+- **路径归一化**：根目录添加时使用 `dunce::canonicalize` 统一路径大小写，避免 Windows 盘符大小写（`C:` / `c:`、`D:` / `d:` 等）导致同一目录被重复添加。
+- **路由兜底**：`client/src/router/index.js` 设有 `/:pathMatch(.*)*` 兜底路由，未知路径自动重定向到 `/`。
+- **无共享目录提示**：`client/src/views/FileBrowser.vue` 在 `roots.length === 0` 时显示引导提示，URL 自动清除查询参数。
 
 ## 测试
 
@@ -244,7 +208,7 @@ client/src/
 | `test/verify-clean.js` | 删除 testdir/ + 检查 config 残留 |
 | `test/server-mgr.js` | 测试用后端服务管理：自动「构建前端→杀旧→起新→等待就绪→停止」，被 test-api / test-crawl 调用 |
 | `test/test-api.js` | API 功能测试（87 项），用 verify.js 断言 |
-| `test/test-crawl.js` | 爬虫功能测试（63 项，结果表带「模式」列区分网页端/桌面端），纯 UI 操作（CDP 真实鼠标事件），**双模式顺序**：先以网页端模式运行（`?shell=0`，测下载/批量下载/日志目录提示/通用上传删除/文件过大/多文件上传/保留两份/虚拟根拖拽禁用）→ 再注入 `__TAURI_INTERNALS__` 切桌面端模式（测打开文件/landisk-drop 拖拽/开机自启 UI，含伪造 `convertFileSrc` 模拟桌面端 asset:// 上传、伪造 `invoke` 让开机自启查询不抛错）；`nav`/`safe`/`cdpRaw` 等全局由 `test/cdp-wrapper.js` 注入，须 `node -r ./test/cdp-wrapper.js test/test-crawl.js` 运行 |
+| `test/test-crawl.js` | 爬虫功能测试（63 项，结果表带「模式」列区分网页端/桌面应用），纯 UI 操作（CDP 真实鼠标事件），**双模式顺序**：先以网页端模式运行（`?shell=0`，测下载/批量下载/日志目录提示/通用上传删除/文件过大/多文件上传/保留两份/虚拟根拖拽禁用）→ 再注入 `__TAURI_INTERNALS__` 切桌面应用模式（测打开文件/landisk-drop 拖拽/开机自启 UI，含伪造 `convertFileSrc` 模拟桌面应用 asset:// 上传、伪造 `invoke` 让开机自启查询不抛错）；`nav`/`safe`/`cdpRaw` 等全局由 `test/cdp-wrapper.js` 注入，须 `node -r ./test/cdp-wrapper.js test/test-crawl.js` 运行 |
 | `test/capture-screens.js` | 用 CDP 截文档用图到 images/（`node -r ./test/cdp-wrapper.js test/capture-screens.js`） |
 
 > **服务器自动管理**：`test-api.js` / `test-crawl.js` 开始时自动构建前端（`client/dist`）、杀旧后端进程并启动新的（`npm run server` + `LANDISK_DATA_DIR=dev-data`），结束时在 finally 里自动关闭。无需手动起服务。

@@ -65,7 +65,8 @@
       "Bash(node -r ./test/cdp-wrapper.js test/test-crawl.js)",
       "Bash(echo \"crawl_exit=$?\")",
       "Bash(echo \"build=$?\")",
-      "Bash(echo \"crawl=$?\")"
+      "Bash(echo \"crawl=$?\")",
+      "Bash(node -e \"const fs=require\\('fs'\\);const f='dist/LanDisk_0.1.2_x64-setup.exe';const b=fs.readFileSync\\(f\\);console.log\\('大小:', \\(b.length/1024/1024\\).toFixed\\(2\\)+' MB'\\)\")"
     ]
   }
 }

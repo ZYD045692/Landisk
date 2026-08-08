@@ -7,7 +7,7 @@
     "frontendDist": "../client/dist",
     "devUrl": "http://localhost:5173",
     "beforeDevCommand": "del /F src-tauri\\server\\target\\debug\\landisk-server.exe 2>nul & taskkill /F /IM landisk-server-x86_64-pc-windows-msvc.exe 2>nul & cargo build --manifest-path src-tauri/server/Cargo.toml && mkdir src-tauri\\binaries 2>nul & copy /Y src-tauri\\server\\target\\debug\\landisk-server.exe src-tauri\\binaries\\landisk-server-x86_64-pc-windows-msvc.exe",
-    "beforeBuildCommand": "del /F server\\target\\release\\landisk-server.exe 2>nul & taskkill /F /IM landisk-server-x86_64-pc-windows-msvc.exe 2>nul & cargo build --manifest-path server/Cargo.toml --release && mkdir binaries 2>nul & copy /Y server\\target\\release\\landisk-server.exe binaries\\landisk-server-x86_64-pc-windows-msvc.exe"
+    "beforeBuildCommand": "del /F src-tauri\\server\\target\\release\\landisk-server.exe 2>nul & taskkill /F /IM landisk-server-x86_64-pc-windows-msvc.exe 2>nul & cargo build --manifest-path src-tauri/server/Cargo.toml --release && mkdir src-tauri\\binaries 2>nul & copy /Y src-tauri\\server\\target\\release\\landisk-server.exe src-tauri\\binaries\\landisk-server-x86_64-pc-windows-msvc.exe"
   },
   "app": {
     "windows": [],

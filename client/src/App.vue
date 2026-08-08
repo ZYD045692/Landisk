@@ -215,7 +215,7 @@ async function handleShellDrop(items) {
   // 真实目录：把绝对路径经 asset 协议转成 File 上传，保住进度条/冲突弹窗
   const tauri = window.__TAURI_INTERNALS__
   if (typeof tauri?.convertFileSrc !== 'function') {
-    ElMessage.info('当前环境无法读取本地文件路径，请在浏览器中选择文件上传')
+    ElMessage.info('当前环境无法读取本地文件，请用「选择文件」上传')
     return
   }
   const files = []
