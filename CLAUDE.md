@@ -214,11 +214,15 @@ client/src/
 | `test/verify.js` | 文件系统验证工具：dirExists, fileExists, filesMatch, fileIs, checkConfigRoots 等 |
 | `test/setup.js` | 创建测试目录 testdir/{testdira/testa, testdirb/testb, testdirc, renamedir/testdira, tmp}（**每个测试运行前都必须先执行**） |
 | `test/verify-clean.js` | 删除 testdir/ + 检查 config 残留 |
-| `test/server-mgr.js` | 测试用后端服务管理：自动「构建前端→杀旧→起新→等待就绪→停止」，被 test-api / test-crawl 调用 |
+| `test/server-mgr.js` | 测试用后端服务管理：自动「构建前端→杀旧→起新→等待就绪→停止」+ 配置备份/恢复（`backupConfig`/`clearConfigRoots`/`restoreConfig`），被 test-api / test-crawl 调用 |
 | `test/test-api.js` | API 功能测试（87 项），用 verify.js 断言 |
 | `test/test-crawl.js` | 爬虫功能测试（63 项，结果表带「模式」列区分网页端/桌面应用），纯 UI 操作（CDP 真实鼠标事件），**双模式顺序**：先以网页端模式运行（`?shell=0`，测下载/批量下载/日志目录提示/通用上传删除/文件过大/多文件上传/保留两份/虚拟根拖拽禁用）→ 再注入 `__TAURI_INTERNALS__` 切桌面应用模式（测打开文件/landisk-drop 拖拽/开机自启 UI，含伪造 `convertFileSrc` 模拟桌面应用 asset:// 上传、伪造 `invoke` 让开机自启查询不抛错）；`nav`/`safe`/`cdpRaw` 等全局由 `test/cdp-wrapper.js` 注入，须 `node -r ./test/cdp-wrapper.js test/test-crawl.js` 运行 |
 | `test/capture-screens.js` | 用 CDP 截文档用图到 images/（`node -r ./test/cdp-wrapper.js test/capture-screens.js`），三种模式：网页端（`?shell=0`）→ 桌面应用（注入 `__TAURI_INTERNALS__`）→ 移动端（`resizeWindow(390,844)` 切手机视口截卡片列表） |
 
 > **服务器自动管理**：`test-api.js` / `test-crawl.js` 开始时自动构建前端（`client/dist`）、杀旧后端进程并启动新的（`npm run server` + `LANDISK_DATA_DIR=dev-data`），结束时在 finally 里自动关闭。无需手动起服务。
+
+> **配置自动备份/恢复**：`test-api.js` / `test-crawl.js` 开始前先 `backupConfig()` 把 `dev-data/config.json` 备份到 `dev-data/config.test-backup.json`，再 `clearConfigRoots()` 清空共享根（从确定性空环境跑），结束 finally 里 `restoreConfig()` 恢复——测试不会污染用户真实共享目录。**跑完测试后 `dev-data/config.json` 应等于测试前**，若 git 显示它被改动，多半是历史提交时把测试残留配置提交进去了，把当前（恢复后的）真实配置提交归位即可，不要误判为测试弄脏。
+
+> **结果文件跟踪**：`test/test-api-results.md` / `test/test-crawl-results.md` 是测试自动生成的表格，**正常 git 跟踪提交**，无需纠结是否该提交——每次测试重跑会覆盖它们，连同测试结果一起提交即可。
 
 全部测试通过：`node test/setup.js && node test/test-api.js && node test/setup.js && node -r ./test/cdp-wrapper.js test/test-crawl.js`

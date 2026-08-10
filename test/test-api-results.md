@@ -1,6 +1,6 @@
 # LanDisk API 测试结果
 
-**时间**: 2026/8/8 19:26:52
+**时间**: 2026/8/10 11:13:15
 **通过: 87 / 87**
 
 | # | 类型 | 操作 | 预期 | verify | 结果 |
@@ -16,7 +16,7 @@
 | 9 | 浏览 | GET /files 穿越 /testdira/C:/Windows/... | type=10 op=3 日志 | ✓ | ✅ |
 | 10 | 日志 | DELETE /logs/display (清显示) | 200 | ✓ | ✅ |
 | 11 | 日志 | DELETE /logs (清空全部) | 200 | ✓ | ✅ |
-| 12 | 日志 | POST logs type=10 op=2 | 200 | ✓ | ✅ |
+| 12 | 日志 | POST logs type=4 op=0 (前端删除取消) | 200 | ✓ | ✅ |
 | 13 | 上传 | POST new.txt→/testdira/testa | 200 | ✓ | ✅ |
 | 14 | 阻断 | POST exe→/testdira/testa | 上传成功 | ✓ | ✅ |
 | 15 | 批量上传 | POST 2 files→/testdira/testa | count=2 | ✓ | ✅ |
