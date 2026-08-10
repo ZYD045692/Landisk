@@ -397,6 +397,12 @@ async function batchDownload() {
   let failures = []
   for (const row of files) {
     const fpath = (props.currentPath === '/' ? '' : props.currentPath) + '/' + row.name
+    // 大文件走直链下载（流式写盘），避免 blob 整体载入内存
+    if (row.size >= DIRECT_DOWNLOAD_THRESHOLD) {
+      directDownload(fpath, row.name)
+      success++
+      continue
+    }
     try {
       const { response, isError, data } = await downloadFileBlob(fpath)
       if (isError) {
@@ -438,8 +444,28 @@ function openDir(name) {
   emit('open-dir', name)
 }
 
+// 大文件直链下载阈值：≥ 此值走浏览器原生下载（流式写盘），避免 blob 整体载入内存导致移动端卡死
+const DIRECT_DOWNLOAD_THRESHOLD = 100 * 1024 * 1024
+
+// 大文件直链下载：浏览器原生流式写盘，不占 JS 内存
+function directDownload(fpath, name) {
+  const url = `${apiUrl('/download')}?path=${encodeURIComponent(fpath)}`
+  const a = document.createElement('a')
+  a.href = url
+  a.download = name
+  document.body.appendChild(a)
+  a.click()
+  document.body.removeChild(a)
+}
+
 async function downloadFile(row) {
   const fpath = (props.currentPath === '/' ? '' : props.currentPath) + '/' + row.name
+  // 大文件走浏览器原生下载（流式写盘），避免 blob 整体载入内存导致移动端卡死
+  if (row.size >= DIRECT_DOWNLOAD_THRESHOLD) {
+    directDownload(fpath, row.name)
+    ElMessage.success(`已开始下载「${row.name}」`)
+    return
+  }
   try {
     const { response, isError, data } = await downloadFileBlob(fpath)
     if (isError) {
