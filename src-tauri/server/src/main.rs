@@ -730,6 +730,12 @@ async fn handle_upload(
     State(state): State<Arc<AppState>>,
     req: Request<axum::body::Body>,
 ) -> impl IntoResponse {
+    // 先读配置，用 max_file_size_mb 决定 multer 硬上限（此前写死 50MB/100MB，会静默截断 >50MB 的文件并写入空文件）
+    let config = state.config.lock().await;
+    let roots = config.roots.clone();
+    let max_size = config.max_file_size_mb * 1024 * 1024;
+    drop(config);
+
     let content_type = req.headers()
         .get(header::CONTENT_TYPE)
         .and_then(|v: &axum::http::HeaderValue| v.to_str().ok())
@@ -744,10 +750,12 @@ async fn handle_upload(
         }
     };
 
+    // 单文件上限 = 配置值 + 1MB 余量（恰好超限的文件由下方 size 检查返回明确错误）；
+    // 整流上限 ×20 留出多文件批次空间，避免 multer 在配置允许范围内提前截断
     let constraints = multer::Constraints::new()
         .size_limit(multer::SizeLimit::new()
-            .whole_stream(100 * 1024 * 1024)
-            .per_field(50 * 1024 * 1024));
+            .whole_stream(max_size.saturating_mul(20).max(50 * 1024 * 1024))
+            .per_field(max_size.saturating_add(1024 * 1024)));
 
     let body_stream = BodyDataStream::new(req.into_body());
     let mut multipart = multer::Multipart::with_constraints(
@@ -772,7 +780,19 @@ async fn handle_upload(
             _ => {
                 let file_name = field.file_name().map(|s| s.to_string()).unwrap_or_default();
                 if !file_name.is_empty() {
-                    let data = field.bytes().await.unwrap_or_default().to_vec();
+                    // 文件超过配置上限时 multer 在此报错：明确提示，绝不写入空文件
+                    let data = match field.bytes().await {
+                        Ok(d) => d.to_vec(),
+                        Err(_) => {
+                            let root_str = resolve_virtual_path(&target_path, &roots)
+                                .ok()
+                                .map(|(idx, _)| roots[idx].path.clone())
+                                .unwrap_or_default();
+                            let msg = format!("文件过大，最大允许 {} MB", max_size / 1024 / 1024);
+                            state.logger.warn(&format!("上传失败 · {}", file_name), Some(1), Some(serde_json::json!({"op": 2, "file": file_name, "error": msg, "root": root_str})));
+                            return err_json(&msg).into_response();
+                        }
+                    };
                     file_fields.push((file_name, data));
                 }
             }
@@ -784,14 +804,10 @@ async fn handle_upload(
         return err_json("没有选择文件").into_response();
     }
 
-    let config = state.config.lock().await;
-    if config.roots.is_empty() {
+    if roots.is_empty() {
         state.logger.warn("请先添加共享目录", Some(1), Some(serde_json::json!({"op": 2, "file": "", "error": "请先添加共享目录"})));
         return err_json("请先添加共享目录").into_response();
     }
-    let roots = config.roots.clone();
-    let max_size = config.max_file_size_mb * 1024 * 1024;
-    drop(config);
 
     let (root_idx, relative_path) = match resolve_virtual_path(&target_path, &roots) {
         Ok(v) => v,
@@ -1492,6 +1508,8 @@ async fn main() {
     let log_path = logger.get_log_path().map(|p| p.to_string_lossy().to_string()).unwrap_or_default();
 
     let port = config.port;
+    // 上传 body 硬上限：配置单文件上限 ×20 留出多文件批次余量（运行期改配置后 multer 内的上限才是权威闸门）
+    let upload_limit = (config.max_file_size_mb * 20 * 1024 * 1024) as usize;
     let roots: Vec<String> = config.roots.iter().map(|r| r.path.clone()).collect();
 
     let app_state = Arc::new(AppState {
@@ -1507,7 +1525,7 @@ async fn main() {
     let app = Router::new()
         .route("/api/files", get(handle_files))
         .route("/api/files/open", post(handle_file_open))
-        .route("/api/upload", post(handle_upload).layer(DefaultBodyLimit::max(100 * 1024 * 1024)))
+        .route("/api/upload", post(handle_upload).layer(DefaultBodyLimit::max(upload_limit)))
         .route("/api/upload/check", post(handle_upload_check))
         .route("/api/download", get(handle_download))
         .route("/api/delete", delete(handle_delete))
