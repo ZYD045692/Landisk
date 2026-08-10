@@ -320,6 +320,20 @@ async function main() {
       const r = await req('GET', `/api/download?path=/${nameB}/testb/f1.txt`);
       return r.status === 200 || `HTTP ${r.status}`;
     });
+    // 大文件下载内容完整（后端流式 ReaderStream 发送：字节一致 + Content-Length 正确）
+    await result(++n, '下载', '上传 20MB→下载内容一致', '字节一致+Content-Length', async () => {
+      const bigPath = path.join(TMP, 'dl_big.bin');
+      fs.writeFileSync(bigPath, Buffer.alloc(20 * 1024 * 1024, 'Y'));
+      const up = curlUpload(bigPath, 'dl_big.bin', `/${nameB}/testb`, '');
+      if (!(up && up.success)) return `上传失败: ${JSON.stringify(up)}`;
+      const res = await fetch(`${BASE}/api/download?path=/${nameB}/testb/dl_big.bin`);
+      if (res.status !== 200) return `HTTP ${res.status}`;
+      const body = Buffer.from(await res.arrayBuffer());
+      const src = fs.readFileSync(bigPath);
+      const cl = res.headers.get('content-length');
+      if (String(src.length) !== cl) return `Content-Length ${cl} vs 源 ${src.length}`;
+      return body.equals(src) ? true : `内容不一致 body=${body.length} src=${src.length}`;
+    });
     // Type=5 op=2: 下载不存在的文件
     await result(++n, '下载', `GET /${nameA}/testa/nonexist.txt`, '200 失败', async () => {
       const r = await req('GET', `/api/download?path=/${nameA}/testa/nonexist.txt`);

@@ -500,6 +500,27 @@ async function main() {
     await cdpClick('.batch-bar .el-button:last-child'); // 取消选择
     await sleep(500);
 
+    /* ---- 14b. 大文件直链下载（>100MB 走浏览器原生下载，不走 blob） ---- */
+    await mark('下载', '大文件直链下载（105MB）');
+    const upBig = await safe(dropBigFile('big_direct.bin', 105 * 1024 * 1024));
+    // 等 105MB 上传完成（文件行出现，最多 20s）
+    let bigRow14b = 'notfound';
+    for (let i = 0; i < 20; i++) {
+      const r = await safe(`(()=>{const rows=Array.from(document.querySelectorAll('tr.el-table__row'));return rows.some(x=>x.textContent.includes('big_direct.bin'))?'yes':'no';})()`);
+      if (r === 'yes') { bigRow14b = 'found'; break; }
+      await sleep(1000);
+    }
+    if (bigRow14b === 'found') {
+      const bigClick = await safe(`(()=>{const rows=Array.from(document.querySelectorAll('tr.el-table__row'));const r=rows.find(x=>x.textContent.includes('big_direct.bin'));if(!r)return'norow';const b=Array.from(r.querySelectorAll('button')).find(x=>x.textContent.includes('下载'));if(!b)return'nobtn';b.click();return'ok';})()`);
+      await sleep(2000);
+      const bigToast = await safe(`window.__EMS__ ? (window.__EMS__.type + ':' + window.__EMS__.text) : ''`);
+      const okBig = bigClick === 'ok' && String(bigToast).includes('已开始下载');
+      await add(++n, '下载', '大文件直链下载（105MB）', '直链 toast「已开始下载」', okBig, okBig ? `✓ ${bigToast}` : `click=${bigClick} toast=${bigToast}`);
+    } else {
+      await add(++n, '下载', '大文件直链下载（105MB）', '上传后文件行存在', false, bigRow14b);
+    }
+    await sleep(500);
+
     /* ---- 15. 搜索 ---- */
     await mark('搜索', '搜索框输入 f1');
     await safe(`(()=>{const i=document.querySelector('.search-input input');if(i){i.value='f1';i.dispatchEvent(new Event('input',{bubbles:true}));return'ok'}return'nope'})()`);

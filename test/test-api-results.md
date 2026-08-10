@@ -1,7 +1,7 @@
 # LanDisk API 测试结果
 
-**时间**: 2026/8/10 11:39:05
-**通过: 87 / 87**
+**时间**: 2026/8/10 14:59:59
+**通过: 88 / 88**
 
 | # | 类型 | 操作 | 预期 | verify | 结果 |
 |---|---|---|---|---|---|
@@ -42,57 +42,58 @@
 | 35 | 打开 | POST /api/open/logdir | 成功+type=6 op=1 | ✓ | ✅ |
 | 36 | 下载 | GET /testdira/testa/f1.txt | 200 | ✓ | ✅ |
 | 37 | 下载 | GET /testdirb/testb/f1.txt | 200 | ✓ | ✅ |
-| 38 | 下载 | GET /testdira/testa/nonexist.txt | 200 失败 | ✓ | ✅ |
-| 39 | 下载 | GET /testdira/testa | 200 失败 | ✓ | ✅ |
-| 40 | 下载 | GET 无效根名 | 失败 | ✓ | ✅ |
-| 41 | 下载 | GET /download 无path | 请求参数错误 | ✓ | ✅ |
-| 42 | 下载 | GET 穿越 /testdira/C:/Windows/... | 无权访问 | ✓ | ✅ |
-| 43 | 删除 | DELETE /testdira/testa/f2.txt | dest=trash | ✓ | ✅ |
-| 44 | 删除 | DELETE /testdira/testa/nonexist.txt | 200 失败 | ✓ | ✅ |
-| 45 | 删除 | DELETE 无效根名 | 失败 | ✓ | ✅ |
-| 46 | 删除 | DELETE /delete 无path | 请求参数错误 | ✓ | ✅ |
-| 47 | 删除 | DELETE 穿越 /testdira/C:/Windows/... | 无权访问 | ✓ | ✅ |
-| 48 | 批量删除 | POST batch /testdira/testa/f3.txt+subdir | 混合删除 | ✓ | ✅ |
-| 49 | 删除 | POST batch 空paths | type=4 op=3 日志 | ✓ | ✅ |
-| 50 | 删除 | DELETE /testdira/testa | dest=trash | ✓ | ✅ |
-| 51 | 删除 | DELETE /testdira/testa(已删) | 200 失败 | ✓ | ✅ |
-| 52 | 删除 | DELETE /testdira (根本身) | 失败+磁盘仍在 | ✓ | ✅ |
-| 53 | 删除 | POST batch 含 /testdira | 根项失败 | ✓ | ✅ |
-| 54 | 根目录 | POST roots 重复添加 (testdira) | 失败 | ✓ | ✅ |
-| 55 | 根目录 | POST roots 不存在路径 | 失败 | ✓ | ✅ |
-| 56 | 根目录 | POST roots 文件路径 | 失败 | ✓ | ✅ |
-| 57 | 根目录 | POST roots 名称重复 | 失败 | ✓ | ✅ |
-| 58 | 根目录 | POST roots 无path | 请提供目录路径 | ✓ | ✅ |
-| 59 | 根目录 | DELETE roots 不存在路径 | 失败 | ✓ | ✅ |
-| 60 | 根目录 | DELETE roots 无path | 请提供目录路径 | ✓ | ✅ |
-| 61 | 根目录 | PUT roots/rename testdirb→renamedB | config.json name 更新 | ✓ | ✅ |
-| 62 | 根目录 | GET /renamedB/testb (新名有效) | 200 | ✓ | ✅ |
-| 63 | 根目录 | GET /testdirb/testb (旧名失效) | 失败 | ✓ | ✅ |
-| 64 | 根目录 | PUT rename 无path | 请提供 | ✓ | ✅ |
-| 65 | 根目录 | PUT rename 无newName | 请提供 | ✓ | ✅ |
-| 66 | 根目录 | PUT rename newName为空 | 名称不能为空 | ✓ | ✅ |
-| 67 | 根目录 | PUT rename 不存在路径 | 不在共享列表 | ✓ | ✅ |
-| 68 | 根目录 | PUT rename 重名(与testdira) | 名称已存在 | ✓ | ✅ |
-| 69 | 根目录 | PUT rename 同名不改 | 成功 | ✓ | ✅ |
-| 70 | 根目录 | PUT rename 改回testdirb | config.json 恢复 | ✓ | ✅ |
-| 71 | 根目录 | 日志 type=7 op=6 testdirb→renamedB | 存在 | ✓ | ✅ |
-| 72 | 配置 | GET /api/config | 含各字段 | ✓ | ✅ |
-| 73 | 配置 | PUT config maxFileSizeMB=1 | 200 | ✓ | ✅ |
-| 74 | 上传 | POST up_large.bin→/testdirb/testb | 文件过大 | ✓ | ✅ |
-| 75 | 配置 | PUT config maxFileSizeMB=500 | 200 | ✓ | ✅ |
-| 76 | 配置 | PUT config showHiddenFiles=true | 200 | ✓ | ✅ |
-| 77 | 配置 | PUT config showHiddenFiles=false | 200 | ✓ | ✅ |
-| 78 | 配置 | PUT config maxFileSizeMB=0 (超范围) | 失败 | ✓ | ✅ |
-| 79 | 上传 | POST up_normal.txt→/testdirb/testb testb_up.txt | 200 | ✓ | ✅ |
-| 80 | 替换 | 替换/testdirb/testb/f1.txt | 内容一致 | ✓ | ✅ |
-| 81 | 批量删除 | POST batch /testdirb/testb/f1.txt+f3.txt | count=2 | ✓ | ✅ |
-| 82 | 删除 | DELETE /testdirb/testb/testb_up.txt | dest=trash | ✓ | ✅ |
-| 83 | 根目录 | DELETE roots path=testdirb | success=true+config清 | ✓ | ✅ |
-| 84 | 根目录 | DELETE roots path=testdira | success=true+config清 | ✓ | ✅ |
-| 85 | 上传 | POST /upload 无共享目录 | 请先添加共享目录 | ✓ | ✅ |
-| 86 | 删除 | DELETE /delete 无共享目录 | 请先添加共享目录 | ✓ | ✅ |
-| 87 | 文件列表 | GET /testdira/testa (根已移除) | 失败 | ✓ | ✅ |
+| 38 | 下载 | 上传 20MB→下载内容一致 | 字节一致+Content-Length | ✓ | ✅ |
+| 39 | 下载 | GET /testdira/testa/nonexist.txt | 200 失败 | ✓ | ✅ |
+| 40 | 下载 | GET /testdira/testa | 200 失败 | ✓ | ✅ |
+| 41 | 下载 | GET 无效根名 | 失败 | ✓ | ✅ |
+| 42 | 下载 | GET /download 无path | 请求参数错误 | ✓ | ✅ |
+| 43 | 下载 | GET 穿越 /testdira/C:/Windows/... | 无权访问 | ✓ | ✅ |
+| 44 | 删除 | DELETE /testdira/testa/f2.txt | dest=trash | ✓ | ✅ |
+| 45 | 删除 | DELETE /testdira/testa/nonexist.txt | 200 失败 | ✓ | ✅ |
+| 46 | 删除 | DELETE 无效根名 | 失败 | ✓ | ✅ |
+| 47 | 删除 | DELETE /delete 无path | 请求参数错误 | ✓ | ✅ |
+| 48 | 删除 | DELETE 穿越 /testdira/C:/Windows/... | 无权访问 | ✓ | ✅ |
+| 49 | 批量删除 | POST batch /testdira/testa/f3.txt+subdir | 混合删除 | ✓ | ✅ |
+| 50 | 删除 | POST batch 空paths | type=4 op=3 日志 | ✓ | ✅ |
+| 51 | 删除 | DELETE /testdira/testa | dest=trash | ✓ | ✅ |
+| 52 | 删除 | DELETE /testdira/testa(已删) | 200 失败 | ✓ | ✅ |
+| 53 | 删除 | DELETE /testdira (根本身) | 失败+磁盘仍在 | ✓ | ✅ |
+| 54 | 删除 | POST batch 含 /testdira | 根项失败 | ✓ | ✅ |
+| 55 | 根目录 | POST roots 重复添加 (testdira) | 失败 | ✓ | ✅ |
+| 56 | 根目录 | POST roots 不存在路径 | 失败 | ✓ | ✅ |
+| 57 | 根目录 | POST roots 文件路径 | 失败 | ✓ | ✅ |
+| 58 | 根目录 | POST roots 名称重复 | 失败 | ✓ | ✅ |
+| 59 | 根目录 | POST roots 无path | 请提供目录路径 | ✓ | ✅ |
+| 60 | 根目录 | DELETE roots 不存在路径 | 失败 | ✓ | ✅ |
+| 61 | 根目录 | DELETE roots 无path | 请提供目录路径 | ✓ | ✅ |
+| 62 | 根目录 | PUT roots/rename testdirb→renamedB | config.json name 更新 | ✓ | ✅ |
+| 63 | 根目录 | GET /renamedB/testb (新名有效) | 200 | ✓ | ✅ |
+| 64 | 根目录 | GET /testdirb/testb (旧名失效) | 失败 | ✓ | ✅ |
+| 65 | 根目录 | PUT rename 无path | 请提供 | ✓ | ✅ |
+| 66 | 根目录 | PUT rename 无newName | 请提供 | ✓ | ✅ |
+| 67 | 根目录 | PUT rename newName为空 | 名称不能为空 | ✓ | ✅ |
+| 68 | 根目录 | PUT rename 不存在路径 | 不在共享列表 | ✓ | ✅ |
+| 69 | 根目录 | PUT rename 重名(与testdira) | 名称已存在 | ✓ | ✅ |
+| 70 | 根目录 | PUT rename 同名不改 | 成功 | ✓ | ✅ |
+| 71 | 根目录 | PUT rename 改回testdirb | config.json 恢复 | ✓ | ✅ |
+| 72 | 根目录 | 日志 type=7 op=6 testdirb→renamedB | 存在 | ✓ | ✅ |
+| 73 | 配置 | GET /api/config | 含各字段 | ✓ | ✅ |
+| 74 | 配置 | PUT config maxFileSizeMB=1 | 200 | ✓ | ✅ |
+| 75 | 上传 | POST up_large.bin→/testdirb/testb | 文件过大 | ✓ | ✅ |
+| 76 | 配置 | PUT config maxFileSizeMB=500 | 200 | ✓ | ✅ |
+| 77 | 配置 | PUT config showHiddenFiles=true | 200 | ✓ | ✅ |
+| 78 | 配置 | PUT config showHiddenFiles=false | 200 | ✓ | ✅ |
+| 79 | 配置 | PUT config maxFileSizeMB=0 (超范围) | 失败 | ✓ | ✅ |
+| 80 | 上传 | POST up_normal.txt→/testdirb/testb testb_up.txt | 200 | ✓ | ✅ |
+| 81 | 替换 | 替换/testdirb/testb/f1.txt | 内容一致 | ✓ | ✅ |
+| 82 | 批量删除 | POST batch /testdirb/testb/f1.txt+f3.txt | count=2 | ✓ | ✅ |
+| 83 | 删除 | DELETE /testdirb/testb/testb_up.txt | dest=trash | ✓ | ✅ |
+| 84 | 根目录 | DELETE roots path=testdirb | success=true+config清 | ✓ | ✅ |
+| 85 | 根目录 | DELETE roots path=testdira | success=true+config清 | ✓ | ✅ |
+| 86 | 上传 | POST /upload 无共享目录 | 请先添加共享目录 | ✓ | ✅ |
+| 87 | 删除 | DELETE /delete 无共享目录 | 请先添加共享目录 | ✓ | ✅ |
+| 88 | 文件列表 | GET /testdira/testa (根已移除) | 失败 | ✓ | ✅ |
 
-**通过: 87 | 失败: 0 | 总计: 87**
+**通过: 88 | 失败: 0 | 总计: 88**
 
 **结论: 全部通过 ✅**

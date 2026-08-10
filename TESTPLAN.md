@@ -58,15 +58,15 @@ test/
 | test/verify.js | 工具函数：文件系统检查 + lockFile/httpReq/getLogs/logContains |
 | test/setup.js | 创建 testdir/ 目录结构和测试文件（**每个测试运行前都必须先执行**） |
 | test/verify-clean.js | 删除整个 testdir/ + 若 config 有残留则报错 |
-| test/test-api.js | API 功能测试（87 项），覆盖全 type/op（**前置：setup.js**） |
-| test/test-crawl.js | 爬虫功能测试（63 项），覆盖前端交互全景（**前置：setup.js**；须 `node -r ./test/cdp-wrapper.js` 运行以注入 CDP 全局） |
+| test/test-api.js | API 功能测试（88 项），覆盖全 type/op（**前置：setup.js**） |
+| test/test-crawl.js | 爬虫功能测试（64 项），覆盖前端交互全景（**前置：setup.js**；须 `node -r ./test/cdp-wrapper.js` 运行以注入 CDP 全局） |
 
-## API 功能测试项（87 项）
+## API 功能测试项（88 项）
 
 每项测试：执行 API 操作 → 检查返回码 → 用 verify.js 文件系统验证。
 路径由测试脚本拼接绝对路径：`DIR_A = testdir/testdira`, `DIR_B = testdir/testdirb`, `TMP_DIR = testdir/tmp`。所有 `path` 均为**虚拟路径**（第一段为根目录 name，如 `/testdira/testa`），不再有 `?root=` 参数。
 
-> 下表列出关键场景，完整 87 项以 `test/test-api.js` 为准（编号为实际运行顺序）。
+> 下表列出关键场景，完整 88 项以 `test/test-api.js` 为准（编号为实际运行顺序）。
 
 **激活的日志类型**：type=1 op=1/2, type=2 op=1/2, type=4 op=1/3, type=5 op=1/2, type=6 op=1/2, type=7 op=1/3/4/5/6/7, type=8 op=1/2, type=9 op=1, type=10 op=3, type=11 op=0/1/2
 
@@ -216,9 +216,9 @@ test/
 
 ```
 node test/setup.js          # 创建目录和文件
-node test/test-api.js       # API 测试（87项），自动起服务→测试→自动关服务→自动清洁
+node test/test-api.js       # API 测试（88项），自动起服务→测试→自动关服务→自动清洁
 node test/setup.js          # 重新创建目录和文件
-node -r ./test/cdp-wrapper.js test/test-crawl.js   # 爬虫测试（63项），自动起服务→测试→自动关服务→自动清洁
+node -r ./test/cdp-wrapper.js test/test-crawl.js   # 爬虫测试（64项），自动起服务→测试→自动关服务→自动清洁
 ```
 
 > **服务器自动管理**：`test-api.js` / `test-crawl.js` 开始时自动构建前端、再杀旧的 22580 后端进程并启动新的（`npm run server` + `LANDISK_DATA_DIR=dev-data`，等待就绪），结束时在 finally 里自动关闭。**测试前无需手动起服务。** 爬虫测试结束时还会通过 CDP `Browser.close` 自动关闭 Chrome。
