@@ -804,6 +804,7 @@ function openIfDirectory(row) {
   .pc-table { display: none; }
   .mobile-list { display: block; }
   .toolbar { padding: 8px; }
-  .sort-btns { display: none; }
+  .toolbar-left { gap: 10px; }
+  .sort-btns { gap: 10px; }
 }
 </style>
