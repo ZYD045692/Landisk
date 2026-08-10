@@ -46,7 +46,7 @@
 <script setup>
 import { ref, computed, onMounted, watch, inject } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { fetchFiles, apiUrl } from '../api'
+import { fetchFiles } from '../api'
 import { ElMessage } from 'element-plus'
 import BreadcrumbNav from '../components/BreadcrumbNav.vue'
 import UploadZone from '../components/UploadZone.vue'
@@ -67,13 +67,11 @@ const refreshFilesKey = inject('refreshFilesKey', ref(0))
 const isVirtualRoot = computed(() => currentPath.value === '/' || currentPath.value === '')
 
 onMounted(() => {
-  // 直接以 URL 进入某个根目录（刷新/书签）也记一次「进入根目录」
   // 注意：roots 可能尚未从 API 加载完（初始为空），不能据此清路径——等 watch(roots) 加载完再决定
   const qp = route.query.path
   if (qp) {
     currentPath.value = qp.startsWith('/') ? qp : '/' + qp
   }
-  logEnterRoot('/', currentPath.value)
   loadDirectory()
 })
 
@@ -98,31 +96,16 @@ watch(roots, (val) => {
   loadDirectory()
 })
 
-// 监听路由 query 变化（虚拟路径）—— 应用内点击 / 浏览器前进后退 / URL 变更统一在这里记「进入根目录」日志
-watch(() => route.query.path, (newPath, oldPath) => {
-  const prev = (oldPath === undefined || oldPath === null || oldPath === '') ? '/' : oldPath
+// 监听路由 query 变化（虚拟路径）—— 应用内点击 / 浏览器前进后退 / URL 变更统一在这里同步当前路径
+watch(() => route.query.path, (newPath) => {
   const next = (newPath && newPath.startsWith('/') ? newPath : '/' + (newPath || ''))
   currentPath.value = next
-  logEnterRoot(prev, next)
   loadDirectory()
 })
 
 async function onUploaded(newNames) {
   pinnedNames.value = newNames || []
   loadDirectory()
-}
-
-// 从虚拟根（fromPath）进入某个根目录（toPath）时记录日志（type=10 op=2）
-function logEnterRoot(fromPath, toPath) {
-  const fromRoot = fromPath === '/' || fromPath === ''
-  const parts = (toPath || '').replace(/\/+$/, '').split('/').filter(Boolean)
-  if (fromRoot && parts.length >= 1) {
-    fetch(apiUrl('/logs'), {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ level: 'info', type: 10, data: { op: 2, dir: parts[0] } })
-    }).catch(() => {})
-  }
 }
 
 async function loadDirectory() {

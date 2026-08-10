@@ -145,8 +145,8 @@ async function main() {
       const r = await req('DELETE', '/api/logs');
       return r.status === 200 || `HTTP ${r.status}`;
     });
-    await result(++n, '日志', 'POST logs type=10 op=2', '200', async () => {
-      const r = await req('POST', '/api/logs', { json: { level: 'info', type: 10, data: { op: 2, dir: nameA } } });
+    await result(++n, '日志', 'POST logs type=4 op=0 (前端删除取消)', '200', async () => {
+      const r = await req('POST', '/api/logs', { json: { level: 'info', type: 4, data: { op: 0, file: 'test.txt' } } });
       return r.status === 200 || `HTTP ${r.status}`;
     });
 

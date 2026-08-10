@@ -170,10 +170,6 @@ export function parseLog(entry) {
         const dir = relativeDir(d.dir, d.root) || d.dir || ''
         return { summary: { op: tag, text: `打开失败` }, files: [{ prefix: tag, text: `${dir}` }, { prefix: tag, text: `${d.error}` }] }
       }
-      if (d.op === 2) {
-        const dir = d.root && d.dir === d.root ? d.root.split(/[/\\]/).pop() || d.dir : relativeDir(d.dir, d.root)
-        return { summary: { op: tag, text: `切换 → ${dir}` } }
-      }
       if (d.error) { const dir = relativeDir(d.dir, d.root); return { summary: { op: tag, text: `${dir} — ${d.error}` } } }
       return { summary: { op: tag, text: relativeDir(d.dir, d.root) || d.dir } }
     case 11:
