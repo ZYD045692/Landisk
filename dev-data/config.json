@@ -1,12 +1,8 @@
 {
   "roots": [
     {
-      "name": "testdira",
-      "path": "D:\\Desktop\\transfer\\test\\testdir\\testdira"
-    },
-    {
-      "name": "testdirb",
-      "path": "D:\\Desktop\\transfer\\test\\testdir\\testdirb"
+      "name": "tmp",
+      "path": "D:\\Desktop\\transfer\\tmp"
     }
   ],
   "port": 22580,
