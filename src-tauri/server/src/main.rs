@@ -22,6 +22,7 @@ use std::sync::Arc;
 use std::time::Duration;
 use tokio_stream::wrappers::BroadcastStream;
 use tokio_stream::StreamExt;
+use tokio_util::io::ReaderStream;
 use tower_http::cors::CorsLayer;
 
 /// 编译时间戳（build.rs 注入）：判断运行中的后端是否最新编译
@@ -977,18 +978,21 @@ async fn handle_download(
     let file_name = resolved.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default();
     let file_size = meta.len();
 
-    match tokio::fs::read(&resolved).await {
-        Ok(data) => {
+    // 流式发送：ReaderStream 边读边发，避免大文件一次性读入内存（此前 tokio::fs::read 会把 ~1GB 文件整块载入）
+    match tokio::fs::File::open(&resolved).await {
+        Ok(file) => {
             state.logger.info(&file_name, Some(5), Some(serde_json::json!({"op": 1, "file": user_path, "size": format_size(file_size), "root": root})));
             let ext = resolved.extension().and_then(|e| e.to_str()).unwrap_or("").to_lowercase();
             let content_type = MIME_TYPES.get(ext.as_str()).unwrap_or(&"application/octet-stream");
             let encoded_name = urlencoding::encode(&file_name);
 
+            let stream = ReaderStream::new(file);
+            let body = axum::body::Body::from_stream(stream);
             (StatusCode::OK, [
                 (header::CONTENT_DISPOSITION, format!("attachment; filename*=UTF-8''{}", encoded_name).as_str()),
                 (header::CONTENT_TYPE, *content_type),
                 (header::CONTENT_LENGTH, &file_size.to_string()),
-            ], data).into_response()
+            ], body).into_response()
         }
         Err(_) => {
             state.logger.error(&format!("下载失败 · {}", user_path), Some(5), Some(serde_json::json!({"op": 2, "file": user_path, "error": "其他原因", "root": root})));
