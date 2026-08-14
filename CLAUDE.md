@@ -112,7 +112,7 @@ SPA，浏览路径存储在 URL query `?path=/根名/子路径`（**虚拟路径
 | `/api/files/open` | POST | 打开文件（系统默认程序）或目录（Windows 资源管理器，均仅桌面应用可打开，远程设备拒绝），`path` 为虚拟路径 |
 | `/api/upload` | POST | 上传文件（multipart），`targetPath` 为虚拟路径 |
 | `/api/upload/check` | POST | 冲突检测（返回已存在的文件名），`targetPath` 为虚拟路径 |
-| `/api/download` | GET | 文件下载，`?path=`（虚拟路径） |
+| `/api/download` | GET | 文件下载/预览，`?path=`（虚拟路径）；`&inline=1` 时为内联预览（Content-Disposition: inline + 日志 type=13 预览），支持 HTTP Range（206 部分内容，视频拖动进度用） |
 | `/api/delete` | DELETE | 删除到回收站，`?path=`（虚拟路径）；虚拟路径就是共享根本身时被拒绝（请用移除） |
 | `/api/delete/batch` | POST | 批量删除，`paths[]` 为虚拟路径；含共享根本身时该项失败 |
 | `/api/roots` | GET/POST/DELETE | 根目录增删查（添加可带 `name`，默认取路径最后一段，名称唯一） |
@@ -145,10 +145,11 @@ SPA，浏览路径存储在 URL query `?path=/根名/子路径`（**虚拟路径
 client/src/
 ├── api/index.js            # Axios 封装 + apiUrl helper，所有 API 函数集中于此
 ├── components/
-│   ├── FileTable.vue       # 文件列表 — PC 端 el-table / 移动端卡片，含搜索/排序/分页/删除；虚拟根行=打开+移除、批量栏=批量移除；壳内文件夹「打开」→资源管理器；**点击约定：行内点击仅文件夹进目录（openIfDirectory），打开/下载走操作列按钮**
+│   ├── FileTable.vue       # 文件列表 — PC 端 el-table / 移动端卡片，含搜索/排序/分页/删除；虚拟根行=打开+移除、批量栏=批量移除；壳内文件夹「打开」→资源管理器；**点击约定：行内点击文件夹进目录、可预览文件（视频/Markdown，见 utils/preview.js）打开预览弹窗，打开/下载走操作列按钮**
 │   ├── UploadZone.vue      # 上传区域 + 冲突弹窗 + 进度条 + 全局拖拽监听
 │   ├── LogViewer.vue       # 服务器日志查看器 — 筛选/清除/SSE 实时推流
 │   ├── SettingsDialog.vue  # 设置弹窗 — 最大上传/显示隐藏/开机自启/日志目录/共享目录管理
+│   ├── PreviewDialog.vue    # 文件预览弹窗 — 视频（video + Range 流式播放）/ Markdown（marked 渲染，转义原始 HTML、拦截危险 scheme、相对图片重写为 inline 下载 URL）
 │   └── BreadcrumbNav.vue   # 面包屑导航
 ├── views/
 │   └── FileBrowser.vue     # 主视图，组合 BreadcrumbNav + UploadZone + FileTable
@@ -215,8 +216,8 @@ client/src/
 | `test/setup.js` | 创建测试目录 testdir/{testdira/testa, testdirb/testb, testdirc, renamedir/testdira, tmp}（**每个测试运行前都必须先执行**） |
 | `test/verify-clean.js` | 删除 testdir/ + 检查 config 残留 |
 | `test/server-mgr.js` | 测试用后端服务管理：自动「构建前端→杀旧→起新→等待就绪→停止」+ 配置备份/恢复（`backupConfig`/`clearConfigRoots`/`restoreConfig`），被 test-api / test-crawl 调用 |
-| `test/test-api.js` | API 功能测试（88 项），用 verify.js 断言 |
-| `test/test-crawl.js` | 爬虫功能测试（64 项，结果表带「模式」列区分网页端/桌面应用），纯 UI 操作（CDP 真实鼠标事件），**双模式顺序**：先以网页端模式运行（`?shell=0`，测下载/批量下载/日志目录提示/通用上传删除/文件过大/多文件上传/保留两份/虚拟根拖拽禁用）→ 再注入 `__TAURI_INTERNALS__` 切桌面应用模式（测打开文件/landisk-drop 拖拽/开机自启 UI，含伪造 `convertFileSrc` 模拟桌面应用 asset:// 上传、伪造 `invoke` 让开机自启查询不抛错）；`nav`/`safe`/`cdpRaw` 等全局由 `test/cdp-wrapper.js` 注入，须 `node -r ./test/cdp-wrapper.js test/test-crawl.js` 运行 |
+| `test/test-api.js` | API 功能测试（96 项），用 verify.js 断言 |
+| `test/test-crawl.js` | 爬虫功能测试（68 项，结果表带「模式」列区分网页端/桌面应用），纯 UI 操作（CDP 真实鼠标事件），**双模式顺序**：先以网页端模式运行（`?shell=0`，测下载/批量下载/日志目录提示/通用上传删除/文件过大/多文件上传/保留两份/虚拟根拖拽禁用）→ 再注入 `__TAURI_INTERNALS__` 切桌面应用模式（测打开文件/landisk-drop 拖拽/开机自启 UI，含伪造 `convertFileSrc` 模拟桌面应用 asset:// 上传、伪造 `invoke` 让开机自启查询不抛错）；`nav`/`safe`/`cdpRaw` 等全局由 `test/cdp-wrapper.js` 注入，须 `node -r ./test/cdp-wrapper.js test/test-crawl.js` 运行 |
 | `test/capture-screens.js` | 用 CDP 截文档用图到 images/（`node -r ./test/cdp-wrapper.js test/capture-screens.js`），三种模式：网页端（`?shell=0`）→ 桌面应用（注入 `__TAURI_INTERNALS__`）→ 移动端（`resizeWindow(390,844)` 切手机视口截卡片列表） |
 
 > **服务器自动管理**：`test-api.js` / `test-crawl.js` 开始时自动构建前端（`client/dist`）、杀旧后端进程并启动新的（`npm run server` + `LANDISK_DATA_DIR=dev-data`），结束时在 finally 里自动关闭。无需手动起服务。

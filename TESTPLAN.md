@@ -58,17 +58,17 @@ test/
 | test/verify.js | 工具函数：文件系统检查 + lockFile/httpReq/getLogs/logContains |
 | test/setup.js | 创建 testdir/ 目录结构和测试文件（**每个测试运行前都必须先执行**） |
 | test/verify-clean.js | 删除整个 testdir/ + 若 config 有残留则报错 |
-| test/test-api.js | API 功能测试（88 项），覆盖全 type/op（**前置：setup.js**） |
-| test/test-crawl.js | 爬虫功能测试（64 项），覆盖前端交互全景（**前置：setup.js**；须 `node -r ./test/cdp-wrapper.js` 运行以注入 CDP 全局） |
+| test/test-api.js | API 功能测试（96 项），覆盖全 type/op（**前置：setup.js**） |
+| test/test-crawl.js | 爬虫功能测试（68 项），覆盖前端交互全景（**前置：setup.js**；须 `node -r ./test/cdp-wrapper.js` 运行以注入 CDP 全局） |
 
-## API 功能测试项（88 项）
+## API 功能测试项（96 项）
 
 每项测试：执行 API 操作 → 检查返回码 → 用 verify.js 文件系统验证。
 路径由测试脚本拼接绝对路径：`DIR_A = testdir/testdira`, `DIR_B = testdir/testdirb`, `TMP_DIR = testdir/tmp`。所有 `path` 均为**虚拟路径**（第一段为根目录 name，如 `/testdira/testa`），不再有 `?root=` 参数。
 
 > 下表列出关键场景，完整 88 项以 `test/test-api.js` 为准（编号为实际运行顺序）。
 
-**激活的日志类型**：type=1 op=1/2, type=2 op=1/2, type=4 op=1/3, type=5 op=1/2, type=6 op=1/2, type=7 op=1/3/4/5/6/7, type=8 op=1/2, type=9 op=1, type=10 op=3, type=11 op=0/1/2
+**激活的日志类型**：type=1 op=1/2, type=2 op=1/2, type=4 op=1/3, type=5 op=1/2, type=6 op=1/2, type=7 op=1/3/4/5/6/7, type=8 op=1/2, type=9 op=1, type=10 op=3, type=11 op=0/1/2, type=13 op=1
 
 > 新增关键项：#2 server-info 回归（`local` 已删除）、#3 重启后 type=9 共享目录启动日志、#24 上传无效根名、#25/#31/#39/#44 四类「穿越外逃→无权访问」（upload/open/download/delete）、#32 打开日志目录（含 type=6 op=1 断言）、#43 删除无 path、#54/#56 roots 无 path、#57 GET config、#70/#71 无共享目录时上传/删除、#21 替换目录名 → type=2 op=2 替换失败日志、#8/#9 files 无效根/穿越 → type=10 op=3 日志、#49 batch 空 paths → type=4 op=3 日志。爬虫新增：重复拖入→type=7 op=3、改名取消/移除取消→type=7 op=5（add/remove）。
 
@@ -101,6 +101,14 @@ test/
 | 23 | 下载 | GET /testa（目录） | type=5 op=2（不能下载目录） |
 | 24 | 下载 | GET 无root | type=5 op=2（请求参数错误） |
 | 25 | 下载 | GET root=999 | type=5 op=2（无效根目录） |
+| 25a | 预览 | GET ?inline=1 | 200 + Content-Disposition: inline + Accept-Ranges + type=13 op=1 |
+| 25b | 预览 | Range: bytes=0-4 | 206 + Content-Range: bytes 0-4/{size} + body 5 字节 |
+| 25c | 预览 | Range: bytes=-5（后缀） | 206 + body = 末尾 5 字节 |
+| 25d | 预览 | Range: bytes=0- | 206 全长 + 内容一致 |
+| 25e | 预览 | Range: bytes={size+100}-（越界） | 416 + Content-Range: bytes */{size} |
+| 25f | 预览 | GET preview.md?inline=1 | Content-Type: text/markdown |
+| 25g | 预览 | seek Range 连续两次 | type=13 日志计数不变（防刷屏） |
+| 25h | 下载 | GET 无 inline 回归 | Content-Disposition: attachment + type=5 op=1（行为不变） |
 | 26 | 删除 | DELETE /testa/f2.txt | type=4 op=1（回收站成功） |
 | 27 | 删除 | DELETE /testa/nonexist.txt | type=4 op=3（找不到文件） |
 | 28 | 删除 | DELETE 无root | type=4 op=3（请求参数错误） |
@@ -144,7 +152,7 @@ test/
 
 **桌面端能力边界**：开机自启开关的**显示**（默认关闭）可测；真实 toggle（enable/disable IPC）、托盘、窗口等能力爬虫测不了，人工验证。
 
-**激活的日志类型**：type=1 op=0/1/2（新增取消/成功/拒绝）、type=2 op=1（替换成功）、type=4 op=0/1（删除取消/回收站）、type=5 op=1/2（下载成功/失败）、type=6 op=1/2（打开成功/失败）、type=7 op=1/2/3/4/5/6/7（根目录增删/拒绝/取消/重命名）、type=8 op=1/2（配置修改/失败）、type=10 op=3（浏览打开失败）、type=11 op=0/1/2（日志清空）
+**激活的日志类型**：type=1 op=0/1/2（新增取消/成功/拒绝）、type=2 op=1（替换成功）、type=4 op=0/1（删除取消/回收站）、type=5 op=1/2（下载成功/失败）、type=6 op=1/2（打开成功/失败）、type=7 op=1/2/3/4/5/6/7（根目录增删/拒绝/取消/重命名）、type=8 op=1/2（配置修改/失败）、type=10 op=3（浏览打开失败）、type=11 op=0/1/2（日志清空）、type=13 op=1（预览成功）
 
 | # | 模式 | 类型 | 操作 | 预期 | 验证 |
 |---|---|---|---|---|---|
@@ -169,6 +177,9 @@ test/
 | 12 | 网页端 | 网页端 | 文件行按钮=下载、批量栏有批量下载 | 网页端 UI 生效 | DOM 校验 |
 | 13 | 网页端 | 下载 | 点文件行「下载」 | toast 已开始下载 + type=5 op=1 | API: GET /api/logs type=5 op=1 + EMS success |
 | 14 | 网页端 | 下载 | 全选→批量下载 | toast「已下载 N 个」 | EMS success |
+| 14c | 网页端 | 预览 | 点击 preview.md 文件名 | 弹窗渲染（标题/代码块/表格/外链）+ type=13 op=1 | DOM: .md-body 内容 + API: logs type=13 op=1 |
+| 14d | 网页端 | 预览 | 点击 preview.mp4 文件名 | 视频弹窗（无效字节 → 无法播放提示） | DOM: video src 含 inline=1 + .el-alert__title「无法播放」 |
+| 14e | 网页端 | 预览 | 点击 f1.txt 文件名 | 无弹窗（非预览类型回归） | DOM: 无 .preview-dialog |
 | 15 | 网页端 | 搜索 | 搜索框输入关键词过滤 | 列表过滤 | — |
 | 16 | 网页端 | 排序 | 点「名称」排序（升→降） | 文件顺序变化 | DOM: 全部行名顺序变化 |
 | 17 | 网页端 | 分页 | 切 pageSize=5 | 每页 ≤5 行 | DOM: 行数 ≤5 |
@@ -191,6 +202,7 @@ test/
 | 34 | 桌面端 | 桌面端 | 开机自启设置默认关闭 | 开关为 off | DOM 校验（.el-switch 无 is-checked） |
 | 35 | 桌面端 | 文件列表 | 桌面端进入 testdira | empty 目录行存在 | DOM: 行数 ≥1 + 含 empty |
 | 36 | 桌面端 | 打开 | **landisk-drop 上传文件→点该行「打开」→默认程序** | type=6 op=1 日志 | API: GET /api/logs type=6 op=1「open_me」 |
+| 36b | 桌面端 | 预览 | landisk-drop 上传 shell_preview.md → 点文件名 | 预览弹窗渲染 Markdown | DOM: .preview-dialog .md-body 有内容 |
 | 37 | 桌面端 | 打开 | 桌面端点 empty 目录「打开」→资源管理器 | type=6 op=1 日志 | API: GET /api/logs（会短暂弹出资源管理器窗口） |
 | 38 | 桌面端 | 桌面端 | 文件行按钮=打开、批量栏无下载 | 桌面端 UI 生效 | DOM 校验 |
 | 39 | 桌面端 | 打开 | 打开日志目录 | type=6 op=1 + toast | API: GET /api/logs type=6 op=1「logs」+ EMS success |

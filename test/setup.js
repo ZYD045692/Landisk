@@ -28,9 +28,12 @@ write(D('testdira', 'testa', 'subdir', 'note.txt'), 'note in subdir');
 write(D('testdira', 'testa', 'f4.txt'), 'test_a - file 4 content');
 write(D('testdira', 'testa', 'f5.txt'), 'test_a - file 5 content');
 write(D('testdira', 'testa', 'f6.txt'), 'test_a - file 6 content');
+// 预览测试数据：Markdown 渲染夹具 + 伪造视频（无效字节 → 触发视频错误处理路径）
+write(D('testdira', 'testa', 'preview.md'), "# 预览标题 Preview Heading\n\n这是一段**加粗**和*斜体*文本，包含[外部链接](https://example.com)。\n\n```js\nconst x = 1;\n```\n\n| 列A | 列B |\n| --- | --- |\n| 1 | 2 |\n");
+write(D('testdira', 'testa', 'preview.mp4'), 'not-a-real-video-content-for-error-path-test');
 mkdir(D('testdira', 'empty'));
 write(D('testdira', 'empty', '.hidden.txt'), 'hidden file for show-hidden toggle test');
-console.log('  ✔ testdir/testdira/testa/ (f1.txt f2.txt f3.txt t.txt subdir/)');
+console.log('  ✔ testdir/testdira/testa/ (f1-6.txt t.txt preview.md preview.mp4 subdir/)');
 console.log('  ✔ testdir/testdira/empty/ (empty dir + .hidden.txt)\n');
 
 mkdir(D('testdirb', 'testb'));

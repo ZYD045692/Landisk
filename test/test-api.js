@@ -362,6 +362,89 @@ async function main() {
       const logs = await V.getLogs();
       return V.logContains(logs, { type: 5, op: 2 }) || '无 type=5 op=2 日志';
     });
+    // ═══════════════════════════════════════
+    // Phase 6b: 预览（inline=1 + Range 支持 + type=13 日志）
+    // ═══════════════════════════════════════
+    const f1Path = path.join(DIR_A, 'testa', 'f1.txt');
+    const f1Size = fs.statSync(f1Path).size;
+    const f1Content = fs.readFileSync(f1Path, 'utf-8');
+
+    // inline=1 初始请求 → 200 + inline disposition + Accept-Ranges + type=13 op=1
+    await result(++n, '预览', `GET /${nameA}/testa/f1.txt?inline=1`, 'inline+type=13 op=1', async () => {
+      const res = await fetch(`${BASE}/api/download?path=/${nameA}/testa/f1.txt&inline=1`);
+      if (res.status !== 200) return `HTTP ${res.status}`;
+      const cd = res.headers.get('content-disposition') || '';
+      if (!cd.includes('inline')) return `Content-Disposition=${cd}`;
+      if (res.headers.get('accept-ranges') !== 'bytes') return '无 Accept-Ranges: bytes';
+      const logs = await V.getLogs();
+      return V.logContains(logs, { type: 13, op: 1 }) || '无 type=13 op=1 日志';
+    });
+
+    // Range bytes=0-4 → 206 + Content-Range + body 长度 5
+    await result(++n, '预览', 'Range: bytes=0-4', '206 + Content-Range', async () => {
+      const res = await fetch(`${BASE}/api/download?path=/${nameA}/testa/f1.txt&inline=1`, { headers: { Range: 'bytes=0-4' } });
+      if (res.status !== 206) return `HTTP ${res.status}`;
+      const cr = res.headers.get('content-range');
+      if (cr !== `bytes 0-4/${f1Size}`) return `Content-Range=${cr}`;
+      const body = Buffer.from(await res.arrayBuffer());
+      return body.length === 5 || `body 长度 ${body.length}`;
+    });
+
+    // Range bytes=-5（后缀）→ 206 + body = 末尾 5 字节
+    await result(++n, '预览', 'Range: bytes=-5 (后缀)', '206 + 末尾5字节', async () => {
+      const res = await fetch(`${BASE}/api/download?path=/${nameA}/testa/f1.txt&inline=1`, { headers: { Range: 'bytes=-5' } });
+      if (res.status !== 206) return `HTTP ${res.status}`;
+      const body = Buffer.from(await res.arrayBuffer());
+      const expected = f1Content.slice(-5);
+      return body.toString('utf-8') === expected ? true : `body=${body.toString('utf-8')} 期望=${expected}`;
+    });
+
+    // Range bytes=0- → 206 全长 + 内容一致
+    await result(++n, '预览', 'Range: bytes=0-', '206 全长一致', async () => {
+      const res = await fetch(`${BASE}/api/download?path=/${nameA}/testa/f1.txt&inline=1`, { headers: { Range: 'bytes=0-' } });
+      if (res.status !== 206) return `HTTP ${res.status}`;
+      const body = Buffer.from(await res.arrayBuffer());
+      const cl = res.headers.get('content-length');
+      if (String(f1Size) !== cl) return `Content-Length ${cl} vs ${f1Size}`;
+      return body.toString('utf-8') === f1Content ? true : '内容不一致';
+    });
+
+    // Range 越界 → 416 + Content-Range: bytes */size
+    await result(++n, '预览', 'Range: bytes=size+100-', '416 + bytes */size', async () => {
+      const res = await fetch(`${BASE}/api/download?path=/${nameA}/testa/f1.txt&inline=1`, { headers: { Range: `bytes=${f1Size + 100}-` } });
+      if (res.status !== 416) return `HTTP ${res.status}`;
+      const cr = res.headers.get('content-range');
+      return cr === `bytes */${f1Size}` ? true : `Content-Range=${cr}`;
+    });
+
+    // preview.md inline → Content-Type: text/markdown
+    await result(++n, '预览', `GET /${nameA}/testa/preview.md?inline=1`, 'text/markdown', async () => {
+      const res = await fetch(`${BASE}/api/download?path=/${nameA}/testa/preview.md&inline=1`);
+      if (res.status !== 200) return `HTTP ${res.status}`;
+      const ct = res.headers.get('content-type') || '';
+      return ct.includes('text/markdown') ? true : `Content-Type=${ct}`;
+    });
+
+    // 防刷屏：非初始 Range 请求不新增 type=13 日志
+    await result(++n, '预览', 'seek Range 不刷日志', 'type=13 计数不变', async () => {
+      const count13 = () => V.getLogs().then(ls => ls.filter(l => l.type === 13).length);
+      const before = await count13();
+      await fetch(`${BASE}/api/download?path=/${nameA}/testa/f1.txt&inline=1`, { headers: { Range: 'bytes=5-10' } });
+      await fetch(`${BASE}/api/download?path=/${nameA}/testa/f1.txt&inline=1`, { headers: { Range: 'bytes=3-7' } });
+      const after = await count13();
+      return after === before || `type=13 日志 ${before} → ${after}`;
+    });
+
+    // 下载回归：无 inline → attachment + type=5 op=1（行为不变）
+    await result(++n, '下载', `GET /${nameA}/testa/f1.txt 回归`, 'attachment + type=5 op=1', async () => {
+      const res = await fetch(`${BASE}/api/download?path=/${nameA}/testa/f1.txt`);
+      if (res.status !== 200) return `HTTP ${res.status}`;
+      const cd = res.headers.get('content-disposition') || '';
+      if (!cd.includes('attachment')) return `Content-Disposition=${cd}`;
+      const logs = await V.getLogs();
+      return V.logContains(logs, { type: 5, op: 1 }) || '无 type=5 op=1 日志';
+    });
+
 
     // ═══════════════════════════════════════
     // Phase 7: 删除

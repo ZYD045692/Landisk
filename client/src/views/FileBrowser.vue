@@ -39,7 +39,11 @@
       @open-dir="openDirectory"
       @retry="loadDirectory"
       @deleted="refreshDirectory"
+      @preview="onPreview"
     />
+
+    <!-- 文件预览弹窗（视频 / Markdown） -->
+    <PreviewDialog ref="previewDialog" />
   </div>
 </template>
 
@@ -51,6 +55,7 @@ import { ElMessage } from 'element-plus'
 import BreadcrumbNav from '../components/BreadcrumbNav.vue'
 import UploadZone from '../components/UploadZone.vue'
 import FileTable from '../components/FileTable.vue'
+import PreviewDialog from '../components/PreviewDialog.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -60,6 +65,7 @@ const entries = ref([])
 const loading = ref(false)
 const error = ref('')
 const pinnedNames = ref([])
+const previewDialog = ref(null)
 const roots = inject('roots', ref([]))
 const refreshFilesKey = inject('refreshFilesKey', ref(0))
 
@@ -161,6 +167,10 @@ async function refreshDirectory() {
 
 async function navigateTo(path) {
   router.push({ query: { path } })
+}
+
+function onPreview(payload) {
+  previewDialog.value?.open(payload)
 }
 
 async function openDirectory(name) {

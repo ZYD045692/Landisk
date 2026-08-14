@@ -18,8 +18,10 @@ use serde::{Deserialize, Serialize};
 use std::convert::Infallible;
 use std::fs;
 use std::path::Path;
+use std::io::SeekFrom;
 use std::sync::Arc;
 use std::time::Duration;
+use tokio::io::{AsyncReadExt, AsyncSeekExt};
 use tokio_stream::wrappers::BroadcastStream;
 use tokio_stream::StreamExt;
 use tokio_util::io::ReaderStream;
@@ -914,6 +916,8 @@ async fn handle_upload(
 #[derive(Deserialize)]
 struct DownloadQuery {
     path: Option<String>,
+    /// inline=1/true 时 Content-Disposition 用 inline（预览用），默认 attachment（下载）
+    inline: Option<String>,
 }
 
 /// 错误响应：统一格式 { success: false, message, data: null }
@@ -926,8 +930,70 @@ fn ok_json(msg: &str, data: Option<serde_json::Value>) -> (StatusCode, Json<serd
     (StatusCode::OK, Json(serde_json::json!({"success": true, "message": msg, "data": data})))
 }
 
+/// 解析 HTTP Range 头（仅支持单段 bytes 区间）
+/// None → 无 Range 头（整文件）；Bytes(start, end) → 含端点的满足区间；Unsatisfiable → 无法满足（416）
+enum RangeResult {
+    None,
+    Bytes(u64, u64),
+    Unsatisfiable,
+}
+
+fn parse_range(header: Option<&str>, size: u64) -> RangeResult {
+    let h = match header {
+        Some(h) => h,
+        None => return RangeResult::None,
+    };
+    let spec = h.strip_prefix("bytes=").unwrap_or(h).trim();
+    // 多段 Range 不支持 → 416
+    if spec.contains(',') { return RangeResult::Unsatisfiable; }
+    let (start_s, end_s) = match spec.split_once('-') {
+        Some(p) => p,
+        None => return RangeResult::Unsatisfiable,
+    };
+    let start_s = start_s.trim();
+    let end_s = end_s.trim();
+
+    // 后缀形式 bytes=-N：最后 N 字节
+    if start_s.is_empty() {
+        if size == 0 { return RangeResult::Unsatisfiable; }
+        let n: u64 = match end_s.parse() {
+            Ok(n) if n > 0 => n,
+            _ => return RangeResult::Unsatisfiable,
+        };
+        let start = size.saturating_sub(n);
+        return RangeResult::Bytes(start, size - 1);
+    }
+
+    let start: u64 = match start_s.parse() {
+        Ok(s) => s,
+        Err(_) => return RangeResult::Unsatisfiable,
+    };
+    if start >= size { return RangeResult::Unsatisfiable; }
+    let end = if end_s.is_empty() {
+        size - 1
+    } else {
+        match end_s.parse::<u64>() {
+            Ok(e) => e.min(size - 1),
+            Err(_) => return RangeResult::Unsatisfiable,
+        }
+    };
+    if end < start { return RangeResult::Unsatisfiable; }
+    RangeResult::Bytes(start, end)
+}
+
+/// 是否「初始请求」：无 Range 或 Range 从 0 开始（浏览器播放视频的首次请求形态）。
+/// 只有初始请求写日志，拖进度条等 seek 请求不写，避免日志被播放刷屏。
+fn is_initial_request(range: &RangeResult) -> bool {
+    match range {
+        RangeResult::None => true,
+        RangeResult::Bytes(0, _) => true,
+        _ => false,
+    }
+}
+
 async fn handle_download(
     State(state): State<Arc<AppState>>,
+    headers: axum::http::HeaderMap,
     Query(query): Query<DownloadQuery>,
 ) -> impl IntoResponse {
     let user_path = match query.path {
@@ -938,13 +1004,20 @@ async fn handle_download(
         }
     };
 
+    // inline=1/true → 预览（Content-Disposition: inline + 日志 type=13 预览）；否则下载（type=5）
+    let inline = match query.inline.as_deref() {
+        Some(v) => v == "1" || v.eq_ignore_ascii_case("true"),
+        None => false,
+    };
+    let log_type: u32 = if inline { 13 } else { 5 };
+
     let config = state.config.lock().await;
     let roots = config.roots.clone();
     drop(config);
     let (root_idx, relative_path) = match resolve_virtual_path(&user_path, &roots) {
         Ok(v) => v,
         Err(e) => {
-            state.logger.warn("无效的根目录", Some(5), Some(serde_json::json!({"op": 2, "file": &user_path, "error": e})));
+            state.logger.warn("无效的根目录", Some(log_type), Some(serde_json::json!({"op": 2, "file": &user_path, "error": e})));
             return err_json("无效的根目录").into_response();
         }
     };
@@ -953,7 +1026,7 @@ async fn handle_download(
     let resolved = match resolve_safe_path(&relative_path, &[root.clone()]) {
         Ok(p) => p,
         Err(_) => {
-            state.logger.warn("无权访问该路径", Some(5), Some(serde_json::json!({"op": 2, "file": &user_path, "error": "无权访问该路径"})));
+            state.logger.warn("无权访问该路径", Some(log_type), Some(serde_json::json!({"op": 2, "file": &user_path, "error": "无权访问该路径"})));
             return err_json("无权访问该路径").into_response();
         }
     };
@@ -961,41 +1034,77 @@ async fn handle_download(
     let meta = match fs::metadata(&resolved) {
         Ok(m) => m,
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
-            state.logger.warn(&format!("下载失败 · {}", user_path), Some(5), Some(serde_json::json!({"op": 2, "file": user_path, "error": "系统找不到指定的文件"})));
+            state.logger.warn(&format!("下载失败 · {}", user_path), Some(log_type), Some(serde_json::json!({"op": 2, "file": user_path, "error": "系统找不到指定的文件"})));
             return err_json("系统找不到指定的文件").into_response();
         }
         Err(e) => {
-            state.logger.error(&format!("下载失败 · {}", user_path), Some(5), Some(serde_json::json!({"op": 2, "file": user_path, "error": e.to_string()})));
+            state.logger.error(&format!("下载失败 · {}", user_path), Some(log_type), Some(serde_json::json!({"op": 2, "file": user_path, "error": e.to_string()})));
             return err_json("其他原因").into_response();
         }
     };
 
     if meta.is_dir() {
-        state.logger.warn(&format!("下载失败 · {}", user_path), Some(5), Some(serde_json::json!({"op": 2, "file": user_path, "error": "不能下载目录", "is_dir": true})));
+        state.logger.warn(&format!("下载失败 · {}", user_path), Some(log_type), Some(serde_json::json!({"op": 2, "file": user_path, "error": "不能下载目录", "is_dir": true})));
         return err_json("不能下载目录").into_response();
     }
 
     let file_name = resolved.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default();
     let file_size = meta.len();
+    let ext = resolved.extension().and_then(|e| e.to_str()).unwrap_or("").to_lowercase();
+    let content_type = MIME_TYPES.get(ext.as_str()).unwrap_or(&"application/octet-stream");
+    let encoded_name = urlencoding::encode(&file_name);
+    let disposition = if inline { "inline" } else { "attachment" };
+
+    let range = parse_range(headers.get(header::RANGE).and_then(|v| v.to_str().ok()), file_size);
+
+    // 仅初始请求写日志：预览/下载成功
+    if is_initial_request(&range) {
+        state.logger.info(&file_name, Some(log_type), Some(serde_json::json!({"op": 1, "file": user_path, "size": format_size(file_size), "root": root})));
+    }
 
     // 流式发送：ReaderStream 边读边发，避免大文件一次性读入内存（此前 tokio::fs::read 会把 ~1GB 文件整块载入）
     match tokio::fs::File::open(&resolved).await {
-        Ok(file) => {
-            state.logger.info(&file_name, Some(5), Some(serde_json::json!({"op": 1, "file": user_path, "size": format_size(file_size), "root": root})));
-            let ext = resolved.extension().and_then(|e| e.to_str()).unwrap_or("").to_lowercase();
-            let content_type = MIME_TYPES.get(ext.as_str()).unwrap_or(&"application/octet-stream");
-            let encoded_name = urlencoding::encode(&file_name);
-
-            let stream = ReaderStream::new(file);
-            let body = axum::body::Body::from_stream(stream);
-            (StatusCode::OK, [
-                (header::CONTENT_DISPOSITION, format!("attachment; filename*=UTF-8''{}", encoded_name).as_str()),
-                (header::CONTENT_TYPE, *content_type),
-                (header::CONTENT_LENGTH, &file_size.to_string()),
-            ], body).into_response()
-        }
+        Ok(file) => match range {
+            RangeResult::Bytes(start, end) => {
+                // 部分内容 206：seek 到 start 后 take(len) 限长，Range 请求支撑视频拖动进度
+                let mut file = file;
+                if file.seek(SeekFrom::Start(start)).await.is_err() {
+                    state.logger.error(&format!("下载失败 · {}", user_path), Some(log_type), Some(serde_json::json!({"op": 2, "file": user_path, "error": "其他原因", "root": root})));
+                    return err_json("其他原因").into_response();
+                }
+                let len = end - start + 1;
+                let limited = file.take(len);
+                let stream = ReaderStream::new(limited);
+                let body = axum::body::Body::from_stream(stream);
+                (StatusCode::PARTIAL_CONTENT, [
+                    (header::CONTENT_DISPOSITION, format!("{}; filename*=UTF-8''{}", disposition, encoded_name).as_str()),
+                    (header::CONTENT_TYPE, *content_type),
+                    (header::CONTENT_LENGTH, &len.to_string()),
+                    (header::CONTENT_RANGE, &format!("bytes {}-{}/{}", start, end, file_size)),
+                    (header::ACCEPT_RANGES, "bytes"),
+                ], body).into_response()
+            }
+            RangeResult::Unsatisfiable => {
+                // 416：无法满足的 Range
+                (StatusCode::RANGE_NOT_SATISFIABLE, [
+                    (header::CONTENT_RANGE, format!("bytes */{}", file_size).as_str()),
+                    (header::ACCEPT_RANGES, "bytes"),
+                ], axum::body::Body::empty()).into_response()
+            }
+            RangeResult::None => {
+                // 整文件 200
+                let stream = ReaderStream::new(file);
+                let body = axum::body::Body::from_stream(stream);
+                (StatusCode::OK, [
+                    (header::CONTENT_DISPOSITION, format!("{}; filename*=UTF-8''{}", disposition, encoded_name).as_str()),
+                    (header::CONTENT_TYPE, *content_type),
+                    (header::CONTENT_LENGTH, &file_size.to_string()),
+                    (header::ACCEPT_RANGES, "bytes"),
+                ], body).into_response()
+            }
+        },
         Err(_) => {
-            state.logger.error(&format!("下载失败 · {}", user_path), Some(5), Some(serde_json::json!({"op": 2, "file": user_path, "error": "其他原因", "root": root})));
+            state.logger.error(&format!("下载失败 · {}", user_path), Some(log_type), Some(serde_json::json!({"op": 2, "file": user_path, "error": "其他原因", "root": root})));
             err_json("其他原因").into_response()
         }
     }
@@ -1283,6 +1392,8 @@ const MIME_TYPES: phf::Map<&'static str, &'static str> = phf::phf_map! {
     "css" => "text/css; charset=utf-8",
     "js" => "application/javascript; charset=utf-8",
     "json" => "application/json; charset=utf-8",
+    "md" => "text/markdown; charset=utf-8",
+    "markdown" => "text/markdown; charset=utf-8",
     "png" => "image/png",
     "jpg" => "image/jpeg",
     "jpeg" => "image/jpeg",
@@ -1305,6 +1416,12 @@ const MIME_TYPES: phf::Map<&'static str, &'static str> = phf::phf_map! {
     "gz" => "application/gzip",
     "mp3" => "audio/mpeg",
     "mp4" => "video/mp4",
+    "webm" => "video/webm",
+    "m4v" => "video/x-m4v",
+    "ogv" => "video/ogg",
+    "mpeg" => "video/mpeg",
+    "mpg" => "video/mpeg",
+    "flv" => "video/x-flv",
     "avi" => "video/x-msvideo",
     "mkv" => "video/x-matroska",
     "mov" => "video/quicktime",

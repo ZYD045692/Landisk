@@ -216,6 +216,7 @@ import { Delete, Download, ArrowRight, Search, Refresh } from '@element-plus/ico
 import { getFileIcon, formatFileSize, formatDate } from '../utils/format'
 import { deleteFile, removeRoot, apiUrl, downloadFileBlob } from '../api'
 import { isShell } from '../utils/env'
+import { canPreview } from '../utils/preview'
 
 async function openFileRow(fpath) {
   const name = String(fpath).replace(/\/+$/, '').split('/').pop() || fpath
@@ -252,7 +253,7 @@ const props = defineProps({
   pinTop: { type: Array, default: () => [] }
 })
 
-const emit = defineEmits(['open-dir', 'retry', 'deleted'])
+const emit = defineEmits(['open-dir', 'retry', 'deleted', 'preview'])
 
 // 共享目录列表（App.vue provide，同一个 ref）——移除后自动触发 FileBrowser 刷新
 const roots = inject('roots', ref([]))
@@ -622,10 +623,14 @@ function handleFileAction(row) {
   }
 }
 
-// 行内/文件名点击：仅文件夹进入目录；文件行不触发（打开/下载走操作列按钮）
+// 行内/文件名点击：文件夹进入目录；可预览文件（视频/Markdown）打开预览弹窗；其余无操作（下载/打开走操作列按钮）
 function openIfDirectory(row) {
   if (row.isDirectory) {
     openDir(row.name)
+    return
+  }
+  if (canPreview(row)) {
+    emit('preview', { name: row.name, vpath: rowPath(row), size: row.size })
   }
 }
 </script>

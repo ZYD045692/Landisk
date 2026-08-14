@@ -520,15 +520,48 @@ async function main() {
       await add(++n, '下载', '大文件直链下载（105MB）', '上传后文件行存在', false, bigRow14b);
     }
     await sleep(500);
+    /* ---- 14c. 网页端：点击 preview.md 文件名 → Markdown 渲染弹窗 ---- */
+    await mark('预览', '点击 preview.md 文件名 → 渲染弹窗');
+    const clickMd14c = await safe(`(()=>{for(const r of document.querySelectorAll('tr.el-table__row')){if(!r.textContent.includes('preview.md'))continue;const n=r.querySelector('.file-name');if(n){n.click();return'ok';}}return'notfound';})()`);
+    await sleep(2500);
+    const mdDlg14c = await safe(`(()=>{const d=document.querySelector('.preview-dialog');if(!d)return'no-el';const body=d.querySelector('.md-body');if(!body)return'no-body';return JSON.stringify({hasHeading:body.textContent.includes('预览标题'),hasCode:body.querySelectorAll('pre').length>0,hasTable:body.querySelectorAll('table').length>0,hasLink:body.querySelectorAll('a[target="_blank"]').length>0});})()`);
+    let ok14c = false, det14c = mdDlg14c;
+    try { const a = JSON.parse(mdDlg14c); ok14c = a.hasHeading && a.hasCode && a.hasTable && a.hasLink; det14c = JSON.stringify(a); } catch {}
+    const log13_14c = await V.getLogs().then(ls => V.logContains(ls, { type: 13, op: 1 }));
+    ok14c = ok14c && log13_14c;
+    await add(++n, '预览', '点击 preview.md 文件名 → 渲染弹窗', '弹窗+标题/代码/表格/外链+type=13 op=1', ok14c, ok14c ? '✓' : `${det14c} log13=${log13_14c}`);
+    await safe(`(()=>{const b=Array.from(document.querySelectorAll('.preview-dialog .el-dialog__footer button')).find(x=>x.textContent.includes('关闭'));if(b)b.click();return'ok';})()`);
+    await sleep(1000);
+
+    /* ---- 14d. 网页端：点击 preview.mp4 文件名 → 视频弹窗（无效字节 → 错误提示） ---- */
+    await mark('预览', '点击 preview.mp4 文件名 → 视频弹窗');
+    const clickMp414d = await safe(`(()=>{for(const r of document.querySelectorAll('tr.el-table__row')){if(!r.textContent.includes('preview.mp4'))continue;const n=r.querySelector('.file-name');if(n){n.click();return'ok';}}return'notfound';})()`);
+    await sleep(2500);
+    const vd14d = await safe(`(()=>{const d=document.querySelector('.preview-dialog');if(!d)return'no-el';const v=d.querySelector('video');if(!v)return'no-video';const src=v.getAttribute('src')||v.currentSrc||'';const alert=d.querySelector('.el-alert__title');return JSON.stringify({inline:src.includes('inline=1'),err:alert?alert.textContent:''});})()`);
+    let ok14d = false, det14d = vd14d;
+    try { const a = JSON.parse(vd14d); ok14d = a.inline && String(a.err).includes('无法播放'); det14d = JSON.stringify(a); } catch {}
+    await add(++n, '预览', '点击 preview.mp4 文件名 → 视频弹窗', 'video src 含 inline=1 + 无法播放提示', ok14d, ok14d ? '✓' : det14d);
+    await safe(`(()=>{const b=Array.from(document.querySelectorAll('.preview-dialog .el-dialog__footer button')).find(x=>x.textContent.includes('关闭'));if(b)b.click();return'ok';})()`);
+    await sleep(1000);
+
+    /* ---- 14e. 网页端：点击 f1.txt 文件名 → 无弹窗（非预览类型回归） ---- */
+    await mark('预览', '点击 f1.txt 文件名 → 无弹窗');
+    const clickTxt14e = await safe(`(()=>{for(const r of document.querySelectorAll('tr.el-table__row')){if(!r.textContent.includes('f1.txt'))continue;const n=r.querySelector('.file-name');if(n){n.click();return'ok';}}return'notfound';})()`);
+    await sleep(1200);
+    const noDlg14e = await safe(`document.querySelector('.preview-dialog') ? 'exists' : 'none'`);
+    const ok14e = clickTxt14e === 'ok' && noDlg14e === 'none';
+    await add(++n, '预览', '点击 f1.txt 文件名 → 无弹窗', '非预览类型点击无操作', ok14e, `click=${clickTxt14e} dlg=${noDlg14e}`);
+    await sleep(300);
+
 
     /* ---- 15. 搜索 ---- */
     await mark('搜索', '搜索框输入 f1');
-    await safe(`(()=>{const i=document.querySelector('.search-input input');if(i){i.value='f1';i.dispatchEvent(new Event('input',{bubbles:true}));return'ok'}return'nope'})()`);
+    await safe(`(()=>{const i=document.querySelector('.toolbar-left .el-input input');if(i){i.value='f1';i.dispatchEvent(new Event('input',{bubbles:true}));return'ok'}return'nope'})()`);
     await sleep(1500);
     const cnt15 = await safe(`document.querySelectorAll('tr.el-table__row').length`);
     const ok15 = parseInt(cnt15) >= 0 && parseInt(cnt15) < 10;
     await add(++n, '搜索', '搜索框输入 f1', '列表过滤', ok15, `${cnt15} 行`);
-    await safe(`(()=>{const i=document.querySelector('.search-input input');if(i){i.value='';i.dispatchEvent(new Event('input',{bubbles:true}));return'ok'}return'nope'})()`);
+    await safe(`(()=>{const i=document.querySelector('.toolbar-left .el-input input');if(i){i.value='';i.dispatchEvent(new Event('input',{bubbles:true}));return'ok'}return'nope'})()`);
     await sleep(1000);
 
     /* ---- 16. 排序：点「名称」按钮 → 顺序翻转 ---- */
@@ -663,6 +696,10 @@ async function main() {
     // ═══════════════════════════════════════
     // Phase 4: 网页端 — 删除
     // ═══════════════════════════════════════
+    // 复位表格状态：清搜索 + pageSize=10 + 第 1 页（此前分页/搜索测试可能残留状态，删除用例依赖 f2.txt 在可见页）
+    await safe(`(()=>{const i=document.querySelector('.toolbar-left .el-input input');if(i){i.value='';i.dispatchEvent(new Event('input',{bubbles:true}));return'ok'}return'nope'})()`);
+    await pgPick('10');
+    await sleep(600);
 
     /* ---- 26. 行删除→取消（type=4 op=0） ---- */
     await mark('取消删除', '行末删除→弹窗→取消');
@@ -678,6 +715,9 @@ async function main() {
 
     /* ---- 27. 行删除→确认（type=4 op=1） ---- */
     await mark('删除', '行末删除 f2.txt→确认');
+    // 用搜索定位 f2.txt（文件较多时分页可能导致它在第 2 页），删除后清空搜索恢复列表
+    await safe(`(()=>{const i=document.querySelector('.toolbar-left .el-input input');if(i){i.value='f2';i.dispatchEvent(new Event('input',{bubbles:true}));return'ok'}return'nope'})()`);
+    await sleep(1200);
     const v27 = await safe(rowBtnIn('f2.txt', '删除'));
     if (v27 === 'ok') {
       await sleep(800);
@@ -686,7 +726,8 @@ async function main() {
       const gone27 = !V.fileExists(path.join(DIR_A, 'testa', 'f2.txt'));
       await add(++n, '删除', '行末删除 f2.txt→确认', '文件已删 (type=4 op=1)', deleted27 && gone27, deleted27 ? (gone27 ? '✓' : '文件仍在') : '点击失败');
     } else await add(++n, '删除', '行末删除→确认', '删除按钮', false, v27);
-    await sleep(2000);
+    await safe(`(()=>{const i=document.querySelector('.toolbar-left .el-input input');if(i){i.value='';i.dispatchEvent(new Event('input',{bubbles:true}));return'ok'}return'nope'})()`);
+    await sleep(1000);
 
     /* ---- 28. 删除不存在：先用 fs 删掉磁盘上的 t.txt，再在 UI 点该行删除 → type=4 op=3 ---- */
     await mark('删除', '删除已从磁盘消失的文件 t.txt');
@@ -826,6 +867,19 @@ async function main() {
       await add(++n, '打开', '桌面端打开文件 open_me.txt→默认程序', 'type=6 op=1 日志', has36, has36 ? '✓' : '无 type=6 op=1 日志');
     } else await add(++n, '打开', '桌面端打开文件 open_me.txt', '文件存在+打开按钮', false, `uploaded=${openFileOk36} v=${v36b}`);
     await sleep(500);
+
+    /* ---- 36b. 壳内预览：landisk-drop 上传 shell_preview.md → 点文件名 → 预览弹窗 ---- */
+    await mark('预览', '桌面端点 md 文件名 → 预览弹窗');
+    const mdAbs36b = path.join(DIR_A, 'shell_preview.md');
+    await safe(`(()=>{window.dispatchEvent(new CustomEvent('landisk-drop',{detail:[{path:${JSON.stringify(mdAbs36b)},isDir:false}]}));return'ok';})()`);
+    await sleep(3000);
+    const mdClick36b = await safe(`(()=>{for(const r of document.querySelectorAll('tr.el-table__row')){if(!r.textContent.includes('shell_preview.md'))continue;const n=r.querySelector('.file-name');if(n){n.click();return'ok';}}return'notfound';})()`);
+    await sleep(2500);
+    const dlg36b = await safe(`(()=>{const d=document.querySelector('.preview-dialog');if(!d)return'no-el';const body=d.querySelector('.md-body');if(!body)return'no-body';const t=(body.textContent||'').trim();return t.length>0?'visible-md':'empty-md';})()`);
+    const ok36b = mdClick36b === 'ok' && dlg36b === 'visible-md';
+    await add(++n, '预览', '桌面端点 md 文件名 → 预览弹窗', '弹窗渲染 Markdown 内容', ok36b, `click=${mdClick36b} dlg=${dlg36b}`);
+    await safe(`(()=>{const b=Array.from(document.querySelectorAll('.preview-dialog .el-dialog__footer button')).find(x=>x.textContent.includes('关闭'));if(b)b.click();return'ok';})()`);
+    await sleep(800);
 
     /* ---- 37. 壳内目录「打开」→ 资源管理器（type=6 op=1） ---- */
     await mark('打开', '桌面端点 empty 目录「打开」→资源管理器');

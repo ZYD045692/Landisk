@@ -291,5 +291,6 @@ static TYPE_NAMES: LazyLock<std::collections::HashMap<u32, &'static str>> = Lazy
         m.insert(10, "浏览");
         m.insert(11, "日志");
         m.insert(12, "服务");
+        m.insert(13, "预览");
         m
     });

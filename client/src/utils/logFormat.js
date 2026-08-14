@@ -18,7 +18,7 @@ function padTag(tag) {
 const TYPE_NAMES = {
   1: '新增', 2: '替换', 4: '删除', 5: '下载',
   6: '打开', 7: '根目录', 8: '配置', 9: '启动', 10: '浏览',
-  11: '日志', 12: '服务'
+  11: '日志', 12: '服务', 13: '预览'
 }
 
 /** 从路径中提取纯文件名（去掉目录和开头的 /），目录加 / 后缀 */
@@ -179,6 +179,12 @@ export function parseLog(entry) {
       return { summary: { op: tag, text: entry.message || '' } }
     case 12:
       return { summary: { op: tag, text: d.error || '' } }
+    case 13:
+      if (d.op === 2) {
+        return { summary: { op: tag, text: '预览失败' }, files: [{ prefix: tag, text: `${displayFile(d.file, d.is_dir)}` }, { prefix: tag, text: `${d.error}` }] }
+      }
+      if (d.error) return { summary: { op: tag, text: `${displayFile(d.file, d.is_dir)} — ${d.error}` } }
+      return { summary: { op: tag, text: `${displayFile(d.file, d.is_dir)} (${d.size})` } }
     default:
       return null
   }
