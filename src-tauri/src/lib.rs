@@ -31,11 +31,13 @@ impl Drop for SidecarProcess {
 }
 
 fn get_config_port() -> u16 {
-    // config 在同级目录下（安装目录）
-    let config_path = std::env::current_exe()
+    // 数据目录优先级与后端 config.rs 一致：LANDISK_DATA_DIR（dev/test 指向 dev-data/）→ 程序所在目录
+    let config_dir = std::env::var("LANDISK_DATA_DIR")
         .ok()
-        .and_then(|p| p.parent().map(|d| d.join("config.json")))
-        .unwrap_or_else(|| PathBuf::from("config.json"));
+        .map(PathBuf::from)
+        .or_else(|| std::env::current_exe().ok().and_then(|p| p.parent().map(|d| d.to_path_buf())))
+        .unwrap_or_else(|| PathBuf::from("."));
+    let config_path = config_dir.join("config.json");
     if let Ok(content) = std::fs::read_to_string(&config_path) {
         if let Ok(v) = serde_json::from_str::<serde_json::Value>(&content) {
             if let Some(port) = v.get("port").and_then(|p| p.as_u64()) {
