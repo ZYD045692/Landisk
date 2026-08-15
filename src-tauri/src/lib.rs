@@ -30,11 +30,35 @@ impl Drop for SidecarProcess {
     }
 }
 
+/// dev 模式数据目录：与 ensure_server 传给 sidecar 的一致（exe 上溯三级 = 仓库根 → dev-data）。
+/// dev 与打包的端口必须同源，否则壳注入的前端端口与 sidecar 实际端口不一致。
+fn dev_data_dir() -> PathBuf {
+    std::env::current_exe()
+        .ok()
+        .and_then(|p| p.parent().map(|d| d.to_path_buf()))
+        .map(|d| d.join("..").join("..").join(".."))
+        .and_then(|p| std::fs::canonicalize(&p).ok())
+        .map(|p| {
+            let s = p.to_string_lossy();
+            let s = s.strip_prefix(r"\\?\").unwrap_or(&s);
+            PathBuf::from(s.to_string()).join("dev-data")
+        })
+        .unwrap_or_else(|| PathBuf::from("dev-data"))
+}
+
 fn get_config_port() -> u16 {
-    // 数据目录优先级与后端 config.rs 一致：LANDISK_DATA_DIR（dev/test 指向 dev-data/）→ 程序所在目录
+    // 优先级：LANDISK_DATA_DIR（用户显式）→ dev 模式仓库根/dev-data（与 ensure_server 一致）→ 程序所在目录
     let config_dir = std::env::var("LANDISK_DATA_DIR")
         .ok()
         .map(PathBuf::from)
+        .or_else(|| {
+            let d = dev_data_dir();
+            if d.join("config.json").exists() {
+                Some(d)
+            } else {
+                None
+            }
+        })
         .or_else(|| std::env::current_exe().ok().and_then(|p| p.parent().map(|d| d.to_path_buf())))
         .unwrap_or_else(|| PathBuf::from("."));
     let config_path = config_dir.join("config.json");
