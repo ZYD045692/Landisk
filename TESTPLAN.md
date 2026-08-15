@@ -233,6 +233,6 @@ node test/setup.js          # 重新创建目录和文件
 node -r ./test/cdp-wrapper.js test/test-crawl.js   # 爬虫测试（64项），自动起服务→测试→自动关服务→自动清洁
 ```
 
-> **服务器自动管理**：`test-api.js` / `test-crawl.js` 开始时自动构建前端、再杀旧的 22580 后端进程并启动新的（`npm run server` + `LANDISK_DATA_DIR=dev-data`，等待就绪），结束时在 finally 里自动关闭。**测试前无需手动起服务。** 爬虫测试结束时还会通过 CDP `Browser.close` 自动关闭 Chrome。
+> **服务器自动管理**：`test-api.js` / `test-crawl.js` 开始时自动构建前端、再杀旧的 22581 后端进程并启动新的（`npm run server` + `LANDISK_DATA_DIR=dev-data`，等待就绪），结束时在 finally 里自动关闭。**测试前无需手动起服务。** 爬虫测试结束时还会通过 CDP `Browser.close` 自动关闭 Chrome。
 
 > **日志累积展示（有意设计）**：先 API 后爬虫的顺序，加上爬虫**不**清空日志，是有意为之——`landisk.log` 会累积两套套件的操作日志（API 各 handler 的 type/op + 爬虫模拟前端的日志写入），让日志查看器一次看到尽可能全的日志状态。**不要**给爬虫加清空日志操作。唯一的例外：API 测试开头会 `DELETE /logs` 一次（在启动日志/重启检查之后），使后续操作日志格式更清晰；type=9「共享目录」启动日志只在「有根时重启」才写，且会被那次清理抹掉，最终查看器里未必能看到它（已在 API 用例 #3 断言验证）。

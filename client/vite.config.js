@@ -19,7 +19,7 @@ export default defineConfig({
     strictPort: true,   // 端口被占用时直接报错而非漂移，避免 Tauri(devUrl=5173) 加载失败
     proxy: {
       '/api': {
-        target: 'http://localhost:22580',
+        target: 'http://localhost:22581',
         changeOrigin: true
       }
     }

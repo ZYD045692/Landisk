@@ -2,14 +2,14 @@
  * 测试用后端服务管理：自动「杀旧 → 起新 → 等待就绪 → 停止」
  * 每个测试脚本开始时先调 startServer()，结束时在 finally 里调 stopServer()。
  *
- * 注意：startServer 会先清掉端口 22580 上的旧进程再启动，保证测到的是最新后端。
+ * 注意：startServer 会先清掉端口 22581 上的旧进程再启动，保证测到的是最新后端。
  */
 const { execSync, spawn } = require('child_process');
 const http = require('http');
 const path = require('path');
 const fs = require('fs');
 
-const PORT = 22580;
+const PORT = 22581;
 const ROOT = path.resolve(__dirname, '..');
 const HEALTH_URL = `http://localhost:${PORT}/api/roots`;
 

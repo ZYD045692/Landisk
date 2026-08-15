@@ -12,7 +12,7 @@ const { verifyClean } = require('./verify-clean');
 const V = require('./verify');
 const { startServer, stopServer, backupConfig, clearConfigRoots, restoreConfig } = require('./server-mgr');
 
-const BASE = 'http://localhost:22580';
+const BASE = 'http://localhost:22581';
 const DIR_A = path.join(__dirname, 'testdir', 'testdira');
 const DIR_B = path.join(__dirname, 'testdir', 'testdirb');
 const TMP   = path.join(__dirname, 'testdir', 'tmp');
@@ -66,7 +66,7 @@ async function main() {
     await result(++n, '启动', '启动日志 type=9', '含服务地址+编译时间(buildTs)', async () => {
       const logs = await V.getLogs();
       const t9 = logs.filter(l => l && l.type === 9 && l.data);
-      const hasUrl = t9.some(l => l.data.desc === '服务地址' && l.data.url && String(l.data.url).includes(':22580'));
+      const hasUrl = t9.some(l => l.data.desc === '服务地址' && l.data.url && String(l.data.url).includes(':22581'));
       const hasTs = t9.some(l => l.data.desc === '编译时间' && l.data.buildTs && /\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}/.test(String(l.data.buildTs)));
       return (hasUrl && hasTs) || `服务地址=${hasUrl} 编译时间=${hasTs}`;
     });

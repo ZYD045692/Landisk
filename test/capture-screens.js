@@ -16,7 +16,7 @@ const V = require('./verify');
 const { startServer, stopServer, backupConfig, clearConfigRoots, restoreConfig } = require('./server-mgr');
 const { verifyClean } = require('./verify-clean');
 
-const BASE = 'http://localhost:22580';
+const BASE = 'http://localhost:22581';
 const DIR_A = path.join(__dirname, 'testdir', 'testdira');
 const OUT = path.join(__dirname, '..', 'images');
 

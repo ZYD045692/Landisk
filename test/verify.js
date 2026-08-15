@@ -42,7 +42,7 @@ function unlockFile(fd) { fs.closeSync(fd); }
 
 // ─── HTTP 请求 ─────────────────────────
 
-const BASE = 'http://localhost:22580';
+const BASE = 'http://localhost:22581';
 
 async function httpReq(method, urlPath, opts = {}) {
   const url = `${BASE}${urlPath}`;

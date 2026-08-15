@@ -3,9 +3,17 @@
     {
       "name": "tmp",
       "path": "D:\\Desktop\\transfer\\tmp"
+    },
+    {
+      "name": "douyin-obsidian",
+      "path": "D:\\Desktop\\douyin-obsidian"
+    },
+    {
+      "name": "vedio",
+      "path": "D:\\Desktop\\vedio"
     }
   ],
-  "port": 22580,
+  "port": 22581,
   "max_file_size_mb": 500,
   "show_hidden_files": false
 }

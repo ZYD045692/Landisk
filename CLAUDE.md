@@ -6,13 +6,13 @@
 
 ```bash
 # 后端
-npm run server          # Rust 后端直启 (:22580) + 前端静态文件
+npm run server          # Rust 后端直启 (:22581) + 前端静态文件
 npm run dev             # 后端热重载：cargo watch --poll 检测变更自动重编（靠 mtime，Windows 可能漏检；用 server-info.buildTs 判断是否最新）
 npm start               # npx tauri dev（Tauri 桌面开发模式，自动编译壳+后端）
 start-dev.bat           # 当前调试模式：杀旧进程 → 启动 Vite(HMR) + Tauri（beforeDevCommand 编译后端）。浏览器 localhost:5173
 
 # 前端开发
-cd client && npm run dev       # Vite dev server (:5173)，/api → localhost:22580
+cd client && npm run dev       # Vite dev server (:5173)，/api → localhost:22581
 cd client && npm run build     # 构建到 client/dist/
 
 # 全新检出或新增依赖后
