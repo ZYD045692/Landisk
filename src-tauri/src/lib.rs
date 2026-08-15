@@ -4,6 +4,7 @@ use std::net::TcpStream;
 use std::path::PathBuf;
 use std::os::windows::process::CommandExt;
 use std::sync::Mutex;
+use std::sync::atomic::{AtomicU16, Ordering};
 
 use tauri::menu::{MenuBuilder, MenuItemBuilder};
 use tauri::tray::TrayIconBuilder;
@@ -12,6 +13,9 @@ use tauri::{Manager, WindowEvent};
 use tauri_plugin_shell::ShellExt;
 
 struct SidecarPid(Mutex<Option<u32>>);
+
+/// 拖拽诊断：记录 DragDropEvent 到后端日志（用于定位 no-drop 是 wry 层拦截还是前端未处理）
+static DRAG_LOG_PORT: AtomicU16 = AtomicU16::new(0);
 
 // 包装 child 进程，drop 时自动 kill
 struct SidecarProcess(Mutex<Option<std::process::Child>>);
@@ -188,6 +192,7 @@ pub fn run() {
         )
         .setup(|app| {
             let p = get_config_port();
+            DRAG_LOG_PORT.store(p, Ordering::Relaxed);
             eprintln!("[配置] 读取端口: {}", p);
             let is_autostart = std::env::args().any(|a| a == "--hidden");
 
@@ -277,6 +282,7 @@ pub fn run() {
                 // 壳内原生拖拽：Tauri 接管 OS 拖拽事件（DOM dragover/drop 不再触发），
                 // 把绝对路径 + isDir 通过 eval 派发 DOM CustomEvent 给前端（landisk-drop / landisk-dragover）
                 WindowEvent::DragDrop(dd) => {
+                    log_drag_event(dd);
                     let js = match dd {
                         tauri::DragDropEvent::Drop { paths, .. } => {
                             let payload: Vec<serde_json::Value> = paths.iter().map(|p| {
@@ -306,4 +312,39 @@ pub fn run() {
         })
         .run(tauri::generate_context!())
         .expect("error running tauri");
+}
+
+/// 拖拽诊断：把 DragDropEvent 事件 POST 到后端日志（type=12），前端日志查看器可见。
+/// 遇到 no-drop 时：日志里「没有」拖拽记录 → wry 层拦截（GetData 提取路径失败）；
+/// 「有」记录但拖拽无效 → 前端未处理。
+fn log_drag_event(dd: &tauri::DragDropEvent) {
+    let port = DRAG_LOG_PORT.load(Ordering::Relaxed);
+    if port == 0 {
+        return;
+    }
+    let desc = match dd {
+        tauri::DragDropEvent::Enter { paths, .. } => format!("拖拽进入 {} 个路径", paths.len()),
+        tauri::DragDropEvent::Over { .. } => "拖拽移动".to_string(),
+        tauri::DragDropEvent::Leave => "拖拽离开".to_string(),
+        tauri::DragDropEvent::Drop { paths, .. } => format!("拖拽放下 {} 个路径", paths.len()),
+        _ => "其他".to_string(),
+    };
+    let body = serde_json::json!({
+        "level": "info",
+        "type": 12,
+        "data": { "op": 1, "desc": "拖拽诊断", "error": desc }
+    })
+    .to_string();
+    // 手动 HTTP POST 到后端日志（零依赖；localhost 快，500ms 内完成）
+    use std::io::Write;
+    if let Ok(mut stream) = TcpStream::connect(("127.0.0.1", port)) {
+        let _ = stream.set_read_timeout(Some(Duration::from_millis(200)));
+        let req = format!(
+            "POST /api/logs HTTP/1.1\r\nHost: localhost:{}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+            port,
+            body.len(),
+            body
+        );
+        let _ = stream.write_all(req.as_bytes());
+    }
 }
