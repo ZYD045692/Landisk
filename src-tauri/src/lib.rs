@@ -263,6 +263,7 @@ pub fn run() {
                 .on_menu_event(|app, event| match event.id().as_ref() {
                     "show" => {
                         if let Some(w) = app.get_webview_window("main") {
+                            let _ = w.unminimize();
                             let _ = w.show();
                             let _ = w.set_focus();
                         }
@@ -290,6 +291,7 @@ pub fn run() {
                 .on_tray_icon_event(|tray, event| {
                     if let tauri::tray::TrayIconEvent::DoubleClick { .. } = event {
                         if let Some(w) = tray.app_handle().get_webview_window("main") {
+                            let _ = w.unminimize();
                             let _ = w.show();
                             let _ = w.set_focus();
                         }
