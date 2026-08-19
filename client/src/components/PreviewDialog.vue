@@ -142,6 +142,54 @@ function escapeAttr(s) {
   return escapeHtml(s).replace(/`/g, '&#96;')
 }
 
+/** HTML 白名单标签：仅放行排版常用标签（div/img/表格等），其余（script/iframe 等）转纯文本 */
+const ALLOWED_HTML_TAGS = new Set([
+  'div','span','p','br','img','b','i','em','strong','u','s','strike','center',
+  'table','thead','tbody','tfoot','tr','td','th','caption','col','colgroup',
+  'h1','h2','h3','h4','h5','h6','blockquote','code','pre','ul','ol','li','dl','dt','dd',
+  'a','hr','sub','sup','mark','small','big','figure','figcaption'
+])
+
+/** 解析并净化 Markdown 内嵌原始 HTML：白名单标签 + 移除 on* 属性 + 相对图片/链接重写为内联下载 URL */
+function sanitizeHtml(htmlText, baseVpath) {
+  const doc = new DOMParser().parseFromString(htmlText, 'text/html')
+  // 自底向上处理（先子后父），替换/清理节点
+  const nodes = [...doc.body.querySelectorAll('*')].reverse()
+  for (const el of nodes) {
+    const tag = el.tagName.toLowerCase()
+    if (!ALLOWED_HTML_TAGS.has(tag)) {
+      // 白名单外标签（script/iframe 等）→ 转纯文本，不执行
+      el.replaceWith(doc.createTextNode(el.textContent || ''))
+      continue
+    }
+    // 移除事件属性（onclick 等）
+    for (const attr of [...el.attributes]) {
+      if (/^on/i.test(attr.name)) el.removeAttribute(attr.name)
+    }
+    if (tag === 'img') {
+      const src = el.getAttribute('src')
+      const url = src ? finalUrl(src, baseVpath) : null
+      if (!url) { el.remove(); continue }
+      el.setAttribute('src', url)
+      el.removeAttribute('srcset') // srcset 无法安全重写，移除
+    }
+    if (tag === 'a') {
+      const href = el.getAttribute('href')
+      if (href) {
+        const url = finalUrl(href, baseVpath)
+        if (url) {
+          el.setAttribute('href', url)
+          el.setAttribute('target', '_blank')
+          el.setAttribute('rel', 'noopener noreferrer')
+        } else {
+          el.removeAttribute('href')
+        }
+      }
+    }
+  }
+  return doc.body.innerHTML
+}
+
 /** 危险 scheme 拦截：返回可用的 href 或 null（null → 渲染为纯文本/丢弃） */
 function safeHref(href) {
   if (!href) return null
@@ -217,9 +265,9 @@ function renderMarkdown(text, vpath) {
   const baseVpath = vpath
   // 用完整 Renderer 实例并覆盖个别方法（部分 renderer 对象会让 marked 缺方法抛错）
   const renderer = new marked.Renderer()
-  // 原始 HTML 一律转义为纯文本显示（防 XSS）
+  // 原始 HTML：白名单净化后放行（div/img/表格等排版可渲染；script/on* 等危险内容转纯文本）
   renderer.html = function ({ text: htmlText }) {
-    return escapeHtml(htmlText)
+    return sanitizeHtml(htmlText, baseVpath)
   }
   renderer.link = function ({ href, title, tokens }) {
     const inner = this.parser.parseInline(tokens)
