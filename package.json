@@ -1,6 +1,6 @@
 {
   "name": "landisk",
-  "version": "0.1.4",
+  "version": "0.1.5",
   "description": "LanDisk - 内网文件服务器",
   "scripts": {
     "start": "npx tauri dev",
