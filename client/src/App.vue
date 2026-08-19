@@ -91,8 +91,8 @@ import { fetchRoots, addRoot } from './api'
 import { isShell } from './utils/env'
 import xIcon from './assets/letter-x.svg'
 import picIcon from './assets/picture.svg'
-import SettingsDialog from './components/SettingsDialog.vue'
-import LogViewer from './components/LogViewer.vue'
+import SettingsDialog from './views/SettingsDialog.vue'
+import LogViewer from './views/LogViewer.vue'
 
 const roots = ref([])
 const showQR = ref(false)
@@ -324,7 +324,13 @@ html, body, #app { height: 100%; font-family: Inter, system-ui, sans-serif; font
 .app-header { background: #1a1a2e; display: flex; align-items: center; justify-content: space-between; padding: 0 20px; color: #fff; flex-shrink: 0; }
 .header-left { display: flex; align-items: center; gap: 10px; }
 .app-title { font-size: 18px; font-weight: 600; color: #e0e6ed; }
-.app-main { flex: 1; overflow-y: auto; padding: 16px; width: 100%; margin: 0 auto; }
+.app-main { flex: 1; overflow-y: auto; padding: 16px; width: 100%; margin: 0 auto; scrollbar-width: none; -ms-overflow-style: none; }
+.app-main::-webkit-scrollbar { display: none; } /* 隐藏主区域滚动条（滚轮仍可滚动） */
+
+/* 弹窗遮罩（.el-overlay / .el-overlay-dialog）是 position:fixed 全屏滚动容器——弹窗内容超高时会在页面最右端冒出滚动条。
+   正文/大纲已在预览弹窗内各自内部滚动，这里隐藏遮罩滚动条兜底，杜绝页面右端出现原生滚动条 */
+.el-overlay, .el-overlay-dialog { scrollbar-width: none; -ms-overflow-style: none; }
+.el-overlay::-webkit-scrollbar, .el-overlay-dialog::-webkit-scrollbar { display: none; }
 .app-footer { background: #fff; border-top: 1px solid #ebeef5; display: flex; align-items: center; justify-content: center; color: #909399; font-size: 12px; flex-shrink: 0; }
 
 @media (max-width: 768px) {

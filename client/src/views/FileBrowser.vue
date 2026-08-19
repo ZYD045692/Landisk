@@ -55,7 +55,7 @@ import { ElMessage } from 'element-plus'
 import BreadcrumbNav from '../components/BreadcrumbNav.vue'
 import UploadZone from '../components/UploadZone.vue'
 import FileTable from '../components/FileTable.vue'
-import PreviewDialog from '../components/PreviewDialog.vue'
+import PreviewDialog from './PreviewDialog.vue'
 
 const route = useRoute()
 const router = useRouter()
